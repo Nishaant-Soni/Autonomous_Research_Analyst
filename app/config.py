@@ -8,9 +8,7 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    database_url: str = (
-        "postgresql+psycopg://postgres:postgres@localhost:5432/research"
-    )
+    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/research"
     openai_api_key: str = ""
     tavily_api_key: str = ""
     langsmith_api_key: str = ""
