@@ -1,0 +1,20 @@
+.claude/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Env / secrets
+.env
+
+# OS
+.DS_Store
+
+# Frontend
+node_modules/
+docs/
+IMPLEMENTATION_PLAN.md
