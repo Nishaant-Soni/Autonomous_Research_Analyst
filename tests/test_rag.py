@@ -2,13 +2,15 @@ import os
 
 import pytest
 
-requires_db = pytest.mark.skipif(
-    os.environ.get("RUN_DB_TESTS") != "1",
-    reason="set RUN_DB_TESTS=1 with a running Postgres (e.g. docker compose up db)",
+# Needs both Postgres AND the real embedding model — kept out of CI (HF 429 on shared
+# runner IPs). Covered locally with the cached model.
+requires_db_and_model = pytest.mark.skipif(
+    os.environ.get("RUN_DB_TESTS") != "1" or os.environ.get("RUN_MODEL_TESTS") != "1",
+    reason="set RUN_DB_TESTS=1 and RUN_MODEL_TESTS=1 (needs Postgres + embedding model)",
 )
 
 
-@requires_db
+@requires_db_and_model
 def test_rag_retrieve_ranks_relevant_chunk_first():
     from fastapi.testclient import TestClient
 

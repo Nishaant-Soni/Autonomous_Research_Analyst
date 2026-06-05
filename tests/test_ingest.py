@@ -2,13 +2,16 @@ import os
 
 import pytest
 
-requires_db = pytest.mark.skipif(
-    os.environ.get("RUN_DB_TESTS") != "1",
-    reason="set RUN_DB_TESTS=1 with a running Postgres (e.g. docker compose up db)",
+# Needs both Postgres AND the real embedding model. Kept out of CI: HF rate-limits
+# shared CI runner IPs (HTTP 429), so model downloads there are unreliable. Covered
+# locally (cached model) and in the Docker image (baked model).
+requires_db_and_model = pytest.mark.skipif(
+    os.environ.get("RUN_DB_TESTS") != "1" or os.environ.get("RUN_MODEL_TESTS") != "1",
+    reason="set RUN_DB_TESTS=1 and RUN_MODEL_TESTS=1 (needs Postgres + embedding model)",
 )
 
 
-@requires_db
+@requires_db_and_model
 def test_ingest_document_creates_doc_and_chunks():
     from fastapi.testclient import TestClient
 
@@ -42,7 +45,7 @@ def test_ingest_document_creates_doc_and_chunks():
             assert len(c.embedding) == 384
 
 
-@requires_db
+# No DB or model needed: empty text is rejected by pydantic (422) before any work.
 def test_ingest_rejects_empty_text():
     from fastapi.testclient import TestClient
 
