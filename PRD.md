@@ -231,7 +231,7 @@ LangSmith captures every agent's prompt, output, token usage, latency, and the f
 
 **Phase 5 — UI + polish (2–3 days).** React (Vite + TS + Tailwind) app: submit question, watch the SSE progress stream live, read the report, inspect the evidence behind any claim. README with architecture diagram, a recorded demo, and the eval numbers up top.
 
-**Stretch (optional).** `.pptx` slide export of the report (FR-12); Pinecone migration write-up; human-in-the-loop approval gate before the Writer runs.
+**Stretch (optional).** In rough order of leverage: **(a) Expose the pipeline as an MCP server** — a thin adapter over the existing graph runner exposing a `research(question)` tool (and optionally `ingest_document`), so any MCP client (Claude Desktop, Cursor, etc.) can invoke the full multi-agent pipeline and receive a cited report. Reuses the existing data model and agents; no architectural change. This is the highest-signal add given where the ecosystem is heading. (b) `.pptx` slide export of the report (FR-12); (c) Pinecone migration write-up; (d) human-in-the-loop approval gate before the Writer runs.
 
 ---
 
