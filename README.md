@@ -14,9 +14,10 @@ Built so far:
 - **Retrieval layer** — document ingestion (chunk + embed + store), pgvector similarity search (RAG), and Tavily web search. Both retrievers return structured `Evidence`.
 - **Agent-graph foundation** — the shared `ResearchState` contract and `Critique` model (`app/graph/state.py`), with a deduplicating reducer so evidence accumulates across the critic loop without the same source landing twice.
 - **All five agent nodes** — Planner (`app/agents/planner.py`, decomposes a question into 3–6 sub-questions), Researcher (`app/agents/researcher.py`, a tool-using loop over `web_search` + `rag_retrieve` that gathers `Evidence` and drafts findings), Critic (`app/agents/critic.py`, LLM-as-judge emitting a groundedness score + `needs_more_research`), Writer (`app/agents/writer.py`, synthesizes a structured report citing evidence by `[ev:i]`), and Citation validator (`app/agents/citation_validator.py`, pure code that drops unsupported claims, then assigns the final `[1..k]` numbering + sources list).
+- **The research graph (Phase 2 complete)** — `app/graph/build.py` wires the five nodes into a LangGraph `StateGraph` with a bounded critic loop (`max_iterations`) and Postgres checkpointing. `python -m scripts.run_once "<question>"` runs the whole pipeline end-to-end and prints a cited Markdown report.
 
-Not yet built: the graph wiring (critic loop + Postgres checkpointer), the
-`/research` endpoints, evaluation harness, and UI.
+Not yet built: the async `/research` endpoints (status polling + SSE), evaluation
+harness, and UI.
 
 ## HTTP endpoints
 
@@ -62,6 +63,20 @@ uvicorn app.main:app --reload         # http://localhost:8000/docs
 
 The first embedding call downloads the model (`BAAI/bge-small-en-v1.5`, 384-dim) into
 the local Hugging Face cache.
+
+## Run the research pipeline (end-to-end)
+
+With Postgres up and `OPENAI_API_KEY` + `TAVILY_API_KEY` set in `.env`, run the full
+multi-agent graph over a question and get a cited Markdown report:
+
+```bash
+docker compose up -d db
+python -m scripts.run_once "What are the main benefits of on-device LLM inference?"
+```
+
+It creates a `research_sessions` row, runs Planner → Researcher → Critic (bounded loop) →
+Writer → Citation validator (checkpointing to Postgres), persists the `evidence` and
+`reports` rows, and prints the report with inline `[n]` citations and a sources list.
 
 ## Tests
 
