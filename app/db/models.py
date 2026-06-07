@@ -13,6 +13,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     Text,
@@ -59,6 +60,13 @@ class ResearchSession(Base):
     question: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     plan: Mapped[dict | None] = mapped_column(JSONB)
+    low_confidence: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    stripped_fraction: Mapped[float] = mapped_column(
+        Float, nullable=False, server_default="0"
+    )
+    error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

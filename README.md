@@ -15,9 +15,10 @@ Built so far:
 - **Agent-graph foundation** — the shared `ResearchState` contract and `Critique` model (`app/graph/state.py`), with a deduplicating reducer so evidence accumulates across the critic loop without the same source landing twice.
 - **All five agent nodes** — Planner (`app/agents/planner.py`, decomposes a question into 3–6 sub-questions), Researcher (`app/agents/researcher.py`, a tool-using loop over `web_search` + `rag_retrieve` that gathers `Evidence` and drafts findings), Critic (`app/agents/critic.py`, LLM-as-judge emitting a groundedness score + `needs_more_research`), Writer (`app/agents/writer.py`, synthesizes a structured report citing evidence by `[ev:i]`), and Citation validator (`app/agents/citation_validator.py`, pure code that drops unsupported claims, then assigns the final `[1..k]` numbering + sources list).
 - **The research graph (Phase 2 complete)** — `app/graph/build.py` wires the five nodes into a LangGraph `StateGraph` with a bounded critic loop (`max_iterations`) and Postgres checkpointing. `python -m scripts.run_once "<question>"` runs the whole pipeline end-to-end and prints a cited Markdown report.
+- **Async research API (Phase 3, in progress)** — `POST /research` creates a session and kicks off the graph run as a background task, returning a `session_id` immediately. A shared runner (`app/graph/runner.py`) drives the session status through `planning → researching → critiquing → writing → validating → done | failed`, persists the report and the citation validator's low-confidence signal, and pushes per-agent progress onto an in-process queue (`app/api/progress.py`) for the upcoming SSE stream. `run_once` now shares this runner.
 
-Not yet built: the async `/research` endpoints (status polling + SSE), evaluation
-harness, and UI.
+Not yet built: status-polling / evidence GET endpoints, the SSE progress stream,
+reliability wrappers, LangSmith tracing, the evaluation harness, and the UI.
 
 ## HTTP endpoints
 
@@ -25,6 +26,7 @@ harness, and UI.
 |--------|------|---------|
 | GET | `/health` | Liveness check |
 | POST | `/documents` | Ingest a document: chunk + embed + store |
+| POST | `/research` | Start an async research run; returns a `session_id` immediately (202) |
 
 Interactive API docs render at `http://localhost:8000/docs`.
 

@@ -1,7 +1,8 @@
-"""First full end-to-end run (plan 2.9, the Phase 2 milestone).
+"""Offline end-to-end run (the Phase 2 milestone, now on the shared runner of plan 3.1/3.2).
 
-Takes a question, runs the research graph against Postgres (with the checkpointer), persists
-the `evidence` and `reports` rows, and prints the cited report.
+Takes a question, creates a session, runs the research graph against Postgres (with the
+checkpointer), and prints the cited report. The run/persist logic lives in
+`app.graph.runner.run_research` so this script and the async API share one code path.
 
 Usage (from the repo root, with Postgres up and OPENAI/TAVILY keys in `.env`):
 
@@ -10,78 +11,25 @@ Usage (from the repo root, with Postgres up and OPENAI/TAVILY keys in `.env`):
 
 import asyncio
 import sys
-from datetime import datetime, timezone
 
-from app.config import settings
 from app.db.init_db import checkpointer_cm, init_db
-from app.db.models import Evidence as EvidenceRow
-from app.db.models import Report, ResearchSession
+from app.db.models import ResearchSession
 from app.db.session import SessionLocal
-from app.graph.build import build_graph
+from app.graph.runner import run_research
 
 
-def _initial_state(session_id: str, question: str) -> dict:
-    return {
-        "session_id": session_id,
-        "question": question,
-        "plan": [],
-        "evidence": [],
-        "draft_findings": "",
-        "critique": None,
-        "iteration": 0,
-        "max_iterations": settings.max_iterations,
-        "report_md": "",
-        "citations_valid": False,
-        "low_confidence": False,
-        "stripped_fraction": 0.0,
-    }
-
-
-async def run_once(question: str) -> dict:
-    # 1. Open a session row up front so the run has a stable id (used as the graph thread_id).
+async def run_once(question: str) -> dict | None:
+    # Open a session row up front so the run has a stable id (used as the graph thread_id).
     with SessionLocal() as db:
-        session = ResearchSession(question=question, status="running")
+        session = ResearchSession(question=question, status="planning")
         db.add(session)
         db.commit()
         session_id = session.id
-    thread_id = str(session_id)
 
-    # 2. Run the graph, checkpointing to Postgres under thread_id = session_id.
+    # The script owns the checkpointer + init_db (the API's lifespan does this instead).
     async with checkpointer_cm() as checkpointer:
         await init_db(checkpointer)
-        graph = build_graph(checkpointer=checkpointer)
-        final = await graph.ainvoke(
-            _initial_state(thread_id, question),
-            config={"configurable": {"thread_id": thread_id}},
-        )
-
-    # 3. Persist evidence + report and close out the session.
-    with SessionLocal() as db:
-        for ev in final["evidence"]:
-            db.add(
-                EvidenceRow(
-                    session_id=session_id,
-                    claim=ev.claim,
-                    content=ev.content,
-                    source_url=ev.source_url,
-                    source_chunk_id=ev.source_chunk_id,
-                    retriever=ev.retriever,
-                )
-            )
-        db.add(
-            Report(
-                session_id=session_id,
-                report_md=final["report_md"],
-                citations_valid=final["citations_valid"],
-            )
-        )
-        session = db.get(ResearchSession, session_id)
-        session.status = "done"
-        session.completed_at = datetime.now(timezone.utc)
-        session.plan = final["plan"]
-        db.commit()
-
-    return final
+        return await run_research(session_id, question, checkpointer)
 
 
 def main() -> None:
@@ -91,6 +39,9 @@ def main() -> None:
         else "What are the benefits of on-device LLM inference?"
     )
     final = asyncio.run(run_once(question))
+    if final is None:
+        print("Run failed — see the session row's status/error.")
+        return
     print(final["report_md"])
     print(
         f"\n[citations_valid={final['citations_valid']} "

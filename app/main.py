@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.documents import router as documents_router
+from app.api.research import router as research_router
 from app.db.init_db import checkpointer_cm, init_db
 
 
@@ -21,6 +22,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Autonomous Research Analyst", lifespan=lifespan)
 app.include_router(documents_router)
+app.include_router(research_router)
 
 
 @app.get("/health")

@@ -21,13 +21,23 @@ CREATE TABLE IF NOT EXISTS chunks (
 );
 
 CREATE TABLE IF NOT EXISTS research_sessions (
-    id            BIGSERIAL PRIMARY KEY,
-    question      TEXT NOT NULL,
-    status        TEXT NOT NULL,
-    plan          JSONB,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    completed_at  TIMESTAMPTZ
+    id                 BIGSERIAL PRIMARY KEY,
+    question           TEXT NOT NULL,
+    status             TEXT NOT NULL,
+    plan               JSONB,
+    low_confidence     BOOLEAN NOT NULL DEFAULT false,
+    stripped_fraction  DOUBLE PRECISION NOT NULL DEFAULT 0,
+    error              TEXT,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at       TIMESTAMPTZ
 );
+
+-- Schema evolution without Alembic (plan 3.2): existing volumes get new columns via ALTER.
+-- Each ALTER mirrors its CREATE column exactly (type/default/nullability); the NOT NULL ones
+-- carry a DEFAULT so adding them to an already-populated table succeeds.
+ALTER TABLE research_sessions ADD COLUMN IF NOT EXISTS low_confidence BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE research_sessions ADD COLUMN IF NOT EXISTS stripped_fraction DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE research_sessions ADD COLUMN IF NOT EXISTS error TEXT;
 
 CREATE TABLE IF NOT EXISTS evidence (
     id               BIGSERIAL PRIMARY KEY,
