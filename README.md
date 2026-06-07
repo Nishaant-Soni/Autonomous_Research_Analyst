@@ -11,7 +11,7 @@ See [`PRD.md`](./PRD.md) for the product spec.
 Built so far:
 
 - **Foundation** — FastAPI service + Postgres (pgvector), one-command bring-up, local embedding model baked into the image.
-- **Retrieval layer** — document ingestion (chunk + embed + store) and pgvector similarity search returning structured `Evidence`.
+- **Retrieval layer** — document ingestion (chunk + embed + store), pgvector similarity search (RAG), and Tavily web search. Both retrievers return structured `Evidence`.
 
 Not yet built: the agent graph (planner/researcher/critic/writer/validator), the
 `/research` endpoints, evaluation harness, and UI.
@@ -67,16 +67,15 @@ the local Hugging Face cache.
 # Fast unit tests (DB- and model-dependent tests are skipped)
 pytest -q
 
-# Full suite, including DB ingestion/retrieval and the real embedding model.
+# Full suite, including DB ingestion/retrieval, the real embedding model, and live web.
 # Needs Postgres running; the schema is created automatically by the test fixtures.
 docker compose up -d db
-RUN_DB_TESTS=1 RUN_MODEL_TESTS=1 pytest -q
+RUN_DB_TESTS=1 RUN_MODEL_TESTS=1 RUN_WEB_TESTS=1 pytest -q
 ```
 
 - `RUN_DB_TESTS=1` enables tests that need Postgres (`DATABASE_URL` must point at it).
 - `RUN_MODEL_TESTS=1` enables tests that load the real embedding model.
-
-CI runs the full suite (Postgres service container + cached model) on push/PR to `main`.
+- `RUN_WEB_TESTS=1` enables the live Tavily web-search test (needs a real `TAVILY_API_KEY`).
 
 ## Lint / format
 
@@ -93,8 +92,7 @@ All settings come from environment variables / `.env` (see [`.env.example`](./.e
 |----------|---------|
 | `DATABASE_URL` | Postgres connection string |
 | `OPENAI_API_KEY` | LLM agents (added in a later phase) |
-| `TAVILY_API_KEY` | Web search (added in a later phase) |
+| `TAVILY_API_KEY` | Web search (Tavily) — the `web_search` retriever and live web test |
 | `LANGSMITH_API_KEY` | Optional tracing |
 | `EMBEDDING_MODEL` | Local embedding model (default `BAAI/bge-small-en-v1.5`) |
 | `MAX_ITERATIONS` | Hard cap on the critic loop (default `2`) |
-```
