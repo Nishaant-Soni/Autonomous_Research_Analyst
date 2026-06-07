@@ -57,3 +57,34 @@ def test_evidence_reducer_appends_across_nodes():
     out = app.invoke({"evidence": []})
 
     assert [e.content for e in out["evidence"]] == ["a", "b"]
+
+
+def test_evidence_reducer_dedups_by_source_within_and_across_nodes():
+    """Same source (web URL / rag chunk id) must not accumulate twice — even within the
+    first node's return (intra-pass) or when a later node re-fetches it (cross-pass)."""
+    x = Evidence(content="x1", retriever="web", source_url="https://x.example")
+    x_dup = Evidence(
+        content="x2-diff-snippet", retriever="web", source_url="https://x.example"
+    )
+    y = Evidence(content="y", retriever="rag", source_chunk_id=5)
+    y_dup = Evidence(content="y-again", retriever="rag", source_chunk_id=5)
+    z = Evidence(content="z", retriever="web", source_url="https://z.example")
+
+    def node_a(state: ResearchState) -> dict:
+        return {"evidence": [x, x_dup, y]}  # intra-pass dup (x / x_dup share a URL)
+
+    def node_b(state: ResearchState) -> dict:
+        return {"evidence": [y_dup, z]}  # cross-pass dup (y_dup re-fetches chunk 5)
+
+    graph = StateGraph(ResearchState)
+    graph.add_node("a", node_a)
+    graph.add_node("b", node_b)
+    graph.add_edge(START, "a")
+    graph.add_edge("a", "b")
+    graph.add_edge("b", END)
+    app = graph.compile()
+
+    out = app.invoke({"evidence": []})
+
+    # one entry per distinct source, first occurrence kept, order preserved
+    assert [e.content for e in out["evidence"]] == ["x1", "y", "z"]

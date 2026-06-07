@@ -7,12 +7,38 @@ the citation validator checks against it), so it must be the *same* type the ret
 already emit, not a second definition.
 """
 
-import operator
 from typing import Annotated, TypedDict
 
 from pydantic import BaseModel, Field
 
 from app.models.evidence import Evidence
+
+
+def _source_key(ev: Evidence) -> tuple[str, object]:
+    """Identity of an evidence item's *source* (not its snippet): same web URL or same rag
+    chunk id is the same source, even if the retrieved text differs slightly."""
+    return (
+        ev.retriever,
+        ev.source_url if ev.retriever == "web" else ev.source_chunk_id,
+    )
+
+
+def _merge_evidence(existing: list[Evidence], new: list[Evidence]) -> list[Evidence]:
+    """Reducer for the `evidence` channel: append only sources not already present.
+
+    Replaces a plain `operator.add` so the same source can't accumulate twice — whether the
+    Researcher repeats a query within one pass or re-fetches a source on a critic loop-back.
+    Keeps the first occurrence and preserves order; a duplicate source would otherwise show up
+    as two identical lines in the final `## Sources` list (PRD §6/§8).
+    """
+    merged = list(existing)
+    seen = {_source_key(e) for e in merged}
+    for ev in new:
+        key = _source_key(ev)
+        if key not in seen:
+            seen.add(key)
+            merged.append(ev)
+    return merged
 
 
 class Critique(BaseModel):
@@ -34,11 +60,11 @@ class Critique(BaseModel):
 class ResearchState(TypedDict):
     """Shared state for the research graph (PRD §5.3, plus the validator's output signal).
 
-    `evidence` accumulates across the critic loop, so it carries an additive reducer:
-    LangGraph channels are last-value-wins by default, which would drop earlier evidence
-    when the Researcher returns again on a loop-back. `operator.add` concatenates each
-    node's returned list onto the existing one instead. The other fields are last-value-
-    wins, which is what we want (e.g. the latest `critique`, the current `iteration`).
+    `evidence` accumulates across the critic loop, so it carries a custom reducer
+    (`_merge_evidence`): LangGraph channels are last-value-wins by default, which would drop
+    earlier evidence when the Researcher returns again on a loop-back. The reducer appends each
+    node's returned items, skipping any whose *source* is already present (dedup). The other
+    fields are last-value-wins, which is what we want (e.g. the latest `critique`, `iteration`).
 
     `low_confidence` / `stripped_fraction` extend §5.3: the citation validator (2.6) sets
     them and the runner (3.2) reads them off final state to persist onto the session —
@@ -48,7 +74,7 @@ class ResearchState(TypedDict):
     session_id: str
     question: str
     plan: list[str]
-    evidence: Annotated[list[Evidence], operator.add]
+    evidence: Annotated[list[Evidence], _merge_evidence]
     draft_findings: str
     critique: Critique | None
     iteration: int

@@ -12,10 +12,10 @@ Built so far:
 
 - **Foundation** — FastAPI service + Postgres (pgvector), one-command bring-up, local embedding model baked into the image.
 - **Retrieval layer** — document ingestion (chunk + embed + store), pgvector similarity search (RAG), and Tavily web search. Both retrievers return structured `Evidence`.
-- **Agent-graph foundation** — the shared `ResearchState` contract and `Critique` model (`app/graph/state.py`), with an additive reducer so evidence accumulates across the critic loop.
-- **Planner & Citation-validator nodes** — the Planner (`app/agents/planner.py`) decomposes a question into 3–6 sub-questions via one LLM call; the Citation validator (`app/agents/citation_validator.py`) is pure code that confirms every `[n]` marker resolves to a real evidence item and, when one doesn't, drops the whole unsupported claim, then renumbers and rebuilds the sources list so the report stays self-consistent.
+- **Agent-graph foundation** — the shared `ResearchState` contract and `Critique` model (`app/graph/state.py`), with a deduplicating reducer so evidence accumulates across the critic loop without the same source landing twice.
+- **Agent nodes so far** — the Planner (`app/agents/planner.py`, decomposes a question into 3–6 sub-questions), the Researcher (`app/agents/researcher.py`, a tool-using loop over `web_search` + `rag_retrieve` that gathers `Evidence` and drafts findings), the Critic (`app/agents/critic.py`, LLM-as-judge emitting a groundedness score + `needs_more_research`), and the Citation validator (`app/agents/citation_validator.py`, pure code that drops unsupported claims and rebuilds a self-consistent sources list).
 
-Not yet built: the Researcher/Critic/Writer nodes and their graph wiring, the
+Not yet built: the Writer node, the graph wiring (critic loop + checkpointer), the
 `/research` endpoints, evaluation harness, and UI.
 
 ## HTTP endpoints
