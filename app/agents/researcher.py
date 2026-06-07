@@ -16,9 +16,8 @@ On a critic loop-back, the prompt narrows scope to the gaps the Critic named (PR
 import json
 from typing import Any
 
-from app.config import settings
 from app.graph.state import Critique, ResearchState
-from app.llm.provider import LLMProvider, OpenAIProvider
+from app.llm.provider import LLMProvider, get_default_provider
 from app.models.evidence import Evidence
 from app.retrieval.rag import rag_retrieve
 from app.retrieval.web import web_search
@@ -120,7 +119,7 @@ def run_researcher(
     max_rounds: int = 6,
 ) -> dict:
     """Run the tool-using loop. Returns `{"evidence": <new>, "draft_findings": <prose>}`."""
-    provider = provider or OpenAIProvider(api_key=settings.openai_api_key)
+    provider = provider or get_default_provider()
     conversation = _build_initial_input(question, plan, critique)
     gathered: list[Evidence] = []
 

@@ -45,3 +45,21 @@ class OpenAIProvider(LLMProvider):
         if tools is not None:
             params["tools"] = tools
         return self._get_client().responses.create(**params)
+
+
+_default_provider: LLMProvider | None = None
+
+
+def get_default_provider() -> LLMProvider:
+    """The shared default provider for the agent nodes.
+
+    Cached so every node reuses one provider (and thus one lazily-created OpenAI client /
+    connection pool) across a graph run, instead of each node building its own. Nodes still
+    accept an injected `provider` for tests; this is only the fallback when none is given.
+    """
+    global _default_provider
+    if _default_provider is None:
+        from app.config import settings
+
+        _default_provider = OpenAIProvider(api_key=settings.openai_api_key)
+    return _default_provider

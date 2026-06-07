@@ -1,38 +1,34 @@
-"""Citation validator — pure code, no LLM (PRD §6, FR-8).
+"""Citation validator node — pure code, no LLM (PRD §6, FR-8).
 
-Every inline ``[n]`` marker in the report must resolve to a real evidence item. Markers are
-1-indexed references into the supplied ``evidence`` list: ``[n]`` is valid iff
-``1 <= n <= len(evidence)``. Validity is positional, so it works uniformly for web
-(``source_url``) and rag (``source_chunk_id``) evidence (PRD §8) — the source *type* is
-irrelevant to whether the citation resolves.
+The Writer (2.5) cites evidence by a stable internal id, `[ev:i]` → `evidence[i]`. This node
+is the single numbering authority: in **every** path it collects the referenced evidence items,
+assigns them contiguous display numbers `[1..k]` (first-appearance order), rewrites the inline
+markers, and renders a matching `## Sources` block via `render_source_line`. Validity is
+positional, so web (`source_url`) and rag (`source_chunk_id`) evidence are handled uniformly
+(PRD §8).
 
-Failure path (plan 2.6 — deterministic sentence-scoped strip): ``citations_valid`` records
-whether the *original* report was clean. When a marker is unresolved we drop the **whole
-sentence carrying it**, not just the ``[n]`` token — leaving the marker alone would keep an
-unsupported claim presented as fact with no attribution, the exact hallucination this product
-exists to prevent. Sentence-scoping fails safe (a claim that can't be tied to a real source
-simply doesn't appear). A sentence is dropped if it contains *any* orphan marker, even if it
-also carries a valid one.
+Failure path (plan 2.6 — deterministic sentence-scoped strip): if an `[ev:i]` reference does
+not resolve to a real evidence item, the **whole sentence carrying it** is dropped — not just
+the token. Leaving the token would keep an unsupported claim presented as fact with no source,
+the exact hallucination this product exists to prevent; sentence-scoping fails safe. A sentence
+is dropped if it contains *any* unresolved reference, even alongside a valid one.
 
-After stripping we make the result self-consistent by construction: surviving markers are
-**renumbered contiguously** and the **sources list is rebuilt** from the surviving evidence,
-so a re-resolve of the cleaned report always passes with no orphan markers and no never-cited
-sources — no second LLM pass, the graph stays linear (2.7).
-
-This is a final safety net, not a quality stage — coverage/quality is the Critic loop's job
-(2.4), which runs before the Writer. 2.3's evidence-as-source-of-truth keeps orphans rare.
+Self-consistent by construction: we strip orphan sentences first, *then* number + render over
+what remains — so the cleaned report always has contiguous `[1..k]` markers, a matching sources
+list, and re-resolves cleanly, with no second LLM pass (the graph stays linear, 2.7).
+`citations_valid` records whether the *original* report was free of unresolved references.
 """
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.graph.state import ResearchState
 from app.models.evidence import Evidence
 
 logger = logging.getLogger(__name__)
 
-_MARKER_RE = re.compile(r"\[(\d+)\]")
+_REF_RE = re.compile(r"\[ev:(\d+)\]")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")  # naive but deterministic, body-only
 _SOURCES_HEADER_RE = re.compile(
     r"^\s{0,3}#{1,6}\s*sources\b.*$", re.IGNORECASE | re.MULTILINE
@@ -44,43 +40,39 @@ _SOURCES_HEADING = "## Sources"
 
 @dataclass
 class CitationReport:
-    citations_valid: bool  # was the *original* report free of unresolved markers?
-    unresolved: list[int]  # markers pointing past the evidence list (orphan citations)
-    never_cited: list[int]  # evidence items (1-indexed) no marker references
-    cleaned_report: str  # self-consistent report after stripping/renumbering
+    citations_valid: (
+        bool  # was the *original* report free of unresolved `[ev:i]` references?
+    )
+    cleaned_report: (
+        str  # self-consistent report: contiguous `[1..k]` markers + `## Sources`
+    )
+    unresolved: list[int] = field(
+        default_factory=list
+    )  # ev indices that pointed past evidence
     stripped_fraction: float = 0.0  # dropped cited sentences / total cited sentences
     low_confidence: bool = False  # too much had to be stripped — surface, don't hide
 
 
 def render_source_line(n: int, ev: Evidence) -> str:
-    """Render one sources-list line. Shared contract: the Writer (2.5) must use this too,
-    so the sources list looks identical whether or not the validator rebuilt it."""
+    """Render one sources-list line for display number `n`."""
     ref = ev.source_url if ev.retriever == "web" else f"chunk #{ev.source_chunk_id}"
     return f"[{n}] {ref}"
 
 
 def validate_citations(report_md: str, evidence: list[Evidence]) -> CitationReport:
     n = len(evidence)
-    cited = {int(m) for m in _MARKER_RE.findall(report_md)}
-    unresolved = sorted(i for i in cited if not (1 <= i <= n))
-    never_cited = sorted(i for i in range(1, n + 1) if i not in cited)
-
-    if not unresolved:
-        # Everything resolves — return the report untouched. `never_cited` is informational
-        # (PRD §6 flags uncited sources, but that is not a gate failure — PRD §14).
-        return CitationReport(
-            citations_valid=True,
-            unresolved=[],
-            never_cited=never_cited,
-            cleaned_report=report_md,
-        )
+    refs = [int(m) for m in _REF_RE.findall(report_md)]
+    unresolved = sorted({i for i in refs if not (0 <= i < n)})
 
     body, _ = _split_at_sources(
         report_md
-    )  # original sources block is discarded + rebuilt
-    cleaned_body, stripped_fraction = _strip_orphan_sentences(body, valid_max=n)
-    cleaned_body, new_to_old = _renumber(cleaned_body)
-    cleaned = _attach_sources(cleaned_body, new_to_old, evidence)
+    )  # we own the sources block; drop any the model added
+
+    stripped_fraction = 0.0
+    if unresolved:
+        body, stripped_fraction = _strip_orphan_sentences(body, valid_max=n)
+
+    cleaned = _renumber_and_attach_sources(body, evidence)
 
     low_confidence = stripped_fraction > _LOW_CONFIDENCE_THRESHOLD
     if low_confidence:
@@ -90,18 +82,17 @@ def validate_citations(report_md: str, evidence: list[Evidence]) -> CitationRepo
         )
 
     return CitationReport(
-        citations_valid=False,  # the *original* had orphan markers
-        unresolved=unresolved,
-        never_cited=[],  # the rebuilt list cites exactly the survivors
+        citations_valid=not unresolved,
         cleaned_report=cleaned,
+        unresolved=unresolved,
         stripped_fraction=stripped_fraction,
         low_confidence=low_confidence,
     )
 
 
 def _split_at_sources(report_md: str) -> tuple[str, str]:
-    """Split the report into (body, sources_block) at the first ``## Sources`` heading.
-    Sentence-stripping must never touch the sources block (URLs contain dots)."""
+    """Split off any pre-existing ``## Sources`` block (we rebuild it). Also keeps the naive
+    sentence splitter away from URL dots in the sources list."""
     match = _SOURCES_HEADER_RE.search(report_md)
     if not match:
         return report_md, ""
@@ -109,29 +100,27 @@ def _split_at_sources(report_md: str) -> tuple[str, str]:
 
 
 def _strip_orphan_sentences(body: str, valid_max: int) -> tuple[str, float]:
-    """Drop every sentence carrying an orphan marker. Operate per line so Markdown structure
-    (headers, list items, blank lines) is preserved; within a line, the *sentence* is the
-    unit (a line may bundle several). Returns the cleaned body and the fraction of cited
-    sentences that were dropped."""
+    """Drop every sentence carrying an unresolved `[ev:i]` reference. Operate per line so
+    Markdown structure (headers, list items, blank lines) is preserved; within a line the
+    *sentence* is the unit. Returns the cleaned body and the fraction of cited sentences dropped.
+    """
     total_cited = 0
     dropped_cited = 0
     out_lines: list[str] = []
 
     for line in body.split("\n"):
-        if (
-            "[" not in line
-        ):  # no possible marker — keep verbatim (headers, blanks, prose)
+        if "[ev:" not in line:  # no reference possible — keep verbatim
             out_lines.append(line)
             continue
 
         kept: list[str] = []
         for sentence in _SENTENCE_SPLIT_RE.split(line):
-            markers = [int(m) for m in _MARKER_RE.findall(sentence)]
-            if markers:
+            refs = [int(m) for m in _REF_RE.findall(sentence)]
+            if refs:
                 total_cited += 1
-                if any(not (1 <= m <= valid_max) for m in markers):
+                if any(not (0 <= i < valid_max) for i in refs):
                     dropped_cited += (
-                        1  # fail safe: drop even if it also has a valid marker
+                        1  # fail safe: drop even if it also carries a valid ref
                     )
                     continue
             kept.append(sentence)
@@ -139,38 +128,38 @@ def _strip_orphan_sentences(body: str, valid_max: int) -> tuple[str, float]:
         new_line = " ".join(kept).rstrip()
         if new_line:
             out_lines.append(new_line)
-        # else: the line's content was fully stripped — drop the now-empty line entirely
+        # else: the line's content was fully stripped — drop the now-empty line
 
     fraction = dropped_cited / total_cited if total_cited else 0.0
     return "\n".join(out_lines), fraction
 
 
-def _renumber(body: str) -> tuple[str, dict[int, int]]:
-    """Renumber the surviving (all valid) markers contiguously from 1, preserving order.
-    Returns the rewritten body and the new→old marker map (for rebuilding the sources list)."""
-    survivors = sorted({int(m) for m in _MARKER_RE.findall(body)})
-    new_to_old = {new: old for new, old in enumerate(survivors, start=1)}
-    old_to_new = {old: new for new, old in new_to_old.items()}
-    renumbered = _MARKER_RE.sub(lambda m: f"[{old_to_new[int(m.group(1))]}]", body)
-    return renumbered, new_to_old
-
-
-def _attach_sources(
-    body: str, new_to_old: dict[int, int], evidence: list[Evidence]
-) -> str:
-    """Append a freshly rendered sources list for the surviving, renumbered markers."""
-    if not new_to_old:
+def _renumber_and_attach_sources(body: str, evidence: list[Evidence]) -> str:
+    """Map referenced `[ev:i]` (all valid here) to contiguous `[1..k]` in first-appearance
+    order, rewrite the markers, and append a matching ``## Sources`` block."""
+    order: list[int] = []
+    for match in _REF_RE.finditer(body):
+        ev_index = int(match.group(1))
+        if ev_index not in order:
+            order.append(ev_index)
+    if not order:
         return body.rstrip()
-    lines = [_SOURCES_HEADING]
-    for new in sorted(new_to_old):
-        lines.append(render_source_line(new, evidence[new_to_old[new] - 1]))
-    return body.rstrip() + "\n\n" + "\n".join(lines)
+
+    display = {ev_index: n for n, ev_index in enumerate(order, start=1)}
+    renumbered = _REF_RE.sub(lambda m: f"[{display[int(m.group(1))]}]", body)
+
+    source_lines = [_SOURCES_HEADING]
+    for n, ev_index in enumerate(order, start=1):
+        source_lines.append(render_source_line(n, evidence[ev_index]))
+    return renumbered.rstrip() + "\n\n" + "\n".join(source_lines)
 
 
 def citation_validator_node(state: ResearchState) -> dict:
-    """Graph node: validate `report_md` against `evidence`, return the cleaned report."""
+    """Graph node: validate/clean `report_md` and surface the validator's signals on state."""
     result = validate_citations(state["report_md"], state["evidence"])
     return {
         "report_md": result.cleaned_report,
         "citations_valid": result.citations_valid,
+        "low_confidence": result.low_confidence,
+        "stripped_fraction": result.stripped_fraction,
     }

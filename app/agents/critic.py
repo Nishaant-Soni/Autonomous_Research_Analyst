@@ -12,9 +12,8 @@ trigger to loop back. The named `gaps` feed straight into the Researcher's next 
 
 import json
 
-from app.config import settings
 from app.graph.state import Critique, ResearchState
-from app.llm.provider import LLMProvider, OpenAIProvider
+from app.llm.provider import LLMProvider, get_default_provider
 from app.models.evidence import Evidence
 
 _SYSTEM_PROMPT = (
@@ -78,7 +77,7 @@ def critique_findings(
     provider: LLMProvider | None = None,
 ) -> Critique:
     """Judge the draft against the evidence/plan. `provider` is injectable for tests."""
-    provider = provider or OpenAIProvider(api_key=settings.openai_api_key)
+    provider = provider or get_default_provider()
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
         {

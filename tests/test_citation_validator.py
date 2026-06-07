@@ -13,66 +13,85 @@ def _web_evidence(n: int) -> list[Evidence]:
         Evidence(
             content=f"fact {i}", retriever="web", source_url=f"https://e{i}.example"
         )
-        for i in range(1, n + 1)
+        for i in range(n)
     ]
 
 
-def test_all_markers_resolve_keeps_report_unchanged():
-    report = (
-        "Paris is the capital of France [1]. It sits on the Seine [2].\n\n"
-        "## Sources\n[1] https://e1.example\n[2] https://e2.example"
-    )
+def test_clean_report_gets_contiguous_numbering_and_sources():
+    # Writer emitted [ev:0] and [ev:1]; both resolve.
+    report = "Paris is the capital of France [ev:0]. It sits on the Seine [ev:1]."
     result = validate_citations(report, _web_evidence(2))
+
     assert result.citations_valid is True
     assert result.unresolved == []
-    assert result.cleaned_report == report  # untouched when everything resolves
-    assert result.low_confidence is False
+    assert (
+        "[ev:" not in result.cleaned_report
+    )  # internal ids rewritten to display numbers
+    assert "[1]" in result.cleaned_report and "[2]" in result.cleaned_report
+    assert (
+        "## Sources\n[1] https://e0.example\n[2] https://e1.example"
+        in result.cleaned_report
+    )
 
 
-def test_orphan_sentence_is_dropped_and_report_is_self_consistent():
-    report = "Grounded claim [1]. Fabricated claim [9]. Another grounded one [2]."
+def test_sparse_references_renumber_contiguously():
+    # Writer referenced ev:0 then ev:2 (skipping ev:1) -> display [1], [2]; sources from 0 and 2.
+    report = "Claim A [ev:0]. Claim B [ev:2]."
+    result = validate_citations(report, _web_evidence(3))
+
+    assert result.citations_valid is True
+    assert "Claim A [1]" in result.cleaned_report
+    assert "Claim B [2]" in result.cleaned_report
+    assert "[1] https://e0.example" in result.cleaned_report
+    assert "[2] https://e2.example" in result.cleaned_report
+
+
+def test_first_appearance_order_drives_display_numbers():
+    report = "First mentioned [ev:2]. Then [ev:0]."
+    result = validate_citations(report, _web_evidence(3))
+    assert "First mentioned [1]" in result.cleaned_report
+    assert "Then [2]" in result.cleaned_report
+    assert (
+        "[1] https://e2.example" in result.cleaned_report
+    )  # ev:2 appeared first -> display 1
+
+
+def test_unresolved_reference_drops_its_sentence_and_report_is_self_consistent():
+    report = (
+        "Grounded claim [ev:0]. Fabricated claim [ev:9]. Another grounded one [ev:1]."
+    )
     result = validate_citations(report, _web_evidence(2))
 
     assert result.citations_valid is False
     assert result.unresolved == [9]
-    # the whole "[9]" sentence is gone, not just the marker token
     assert "Fabricated claim" not in result.cleaned_report
-    assert "[9]" not in result.cleaned_report
-    # a rebuilt sources list is present and the cleaned report re-resolves cleanly
-    assert "## Sources" in result.cleaned_report
-    revalidated = validate_citations(result.cleaned_report, _web_evidence(2))
-    assert revalidated.citations_valid is True
-    assert revalidated.never_cited == []
+    assert "[ev:" not in result.cleaned_report
+    # the cleaned report re-resolves cleanly (no unresolved refs remain)
+    assert (
+        validate_citations(result.cleaned_report, _web_evidence(2)).citations_valid
+        is True
+    )
 
 
-def test_dropping_a_valid_marker_triggers_contiguous_renumbering():
-    # First sentence carries BOTH [1] (valid) and [9] (orphan) -> dropped wholesale,
-    # so the surviving [2] must be renumbered down to [1] and its source rebuilt.
-    report = "Claim with both [1] and [9] markers. Standalone claim [2]."
+def test_sentence_with_both_valid_and_orphan_ref_is_dropped_then_renumbered():
+    # First sentence has valid [ev:0] AND orphan [ev:9] -> dropped wholesale; surviving [ev:1]
+    # renumbers to [1], its source rebuilt from the original 2nd evidence item.
+    report = "Mixed claim [ev:0] and [ev:9]. Standalone claim [ev:1]."
     result = validate_citations(report, _web_evidence(2))
 
     assert result.citations_valid is False
-    assert "[2]" not in result.cleaned_report  # renumbered
     assert "Standalone claim [1]." in result.cleaned_report
-    # the rebuilt source for new [1] points at the *original* second evidence item
-    assert "[1] https://e2.example" in result.cleaned_report
+    assert "[1] https://e1.example" in result.cleaned_report
 
 
 def test_high_orphan_fraction_sets_low_confidence(caplog):
-    report = "A [1]. B [5]. C [6]."  # 2 of 3 cited claims orphaned (>50%)
+    report = "A [ev:0]. B [ev:5]. C [ev:6]."  # 2 of 3 cited sentences orphaned (>50%)
     with caplog.at_level(logging.WARNING):
         result = validate_citations(report, _web_evidence(1))
     assert result.citations_valid is False
     assert result.stripped_fraction > 0.5
     assert result.low_confidence is True
     assert any("stripped" in r.message for r in caplog.records)
-
-
-def test_never_cited_source_is_flagged_when_otherwise_clean():
-    report = "Only the first source is used here [1]."
-    result = validate_citations(report, _web_evidence(3))
-    assert result.citations_valid is True  # no unresolved markers
-    assert result.never_cited == [2, 3]
 
 
 def test_render_source_line_for_web_and_rag():
@@ -82,10 +101,15 @@ def test_render_source_line_for_web_and_rag():
     assert render_source_line(3, rag) == "[3] chunk #42"
 
 
-def test_node_returns_cleaned_report_and_flag():
-    state = {"report_md": "Good [1]. Bad [7].", "evidence": _web_evidence(1)}
+def test_node_writes_all_state_signals():
+    state = {"report_md": "Good [ev:0]. Bad [ev:7].", "evidence": _web_evidence(1)}
     update = citation_validator_node(state)  # type: ignore[arg-type]
+    assert set(update) == {
+        "report_md",
+        "citations_valid",
+        "low_confidence",
+        "stripped_fraction",
+    }
     assert update["citations_valid"] is False
     assert "Bad" not in update["report_md"]
-    assert "[7]" not in update["report_md"]
     assert "[1]" in update["report_md"]

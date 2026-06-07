@@ -13,9 +13,8 @@ bearing, so dropping it from persisted state is a deliberate v1 simplification.
 
 import json
 
-from app.config import settings
 from app.graph.state import ResearchState
-from app.llm.provider import LLMProvider, OpenAIProvider
+from app.llm.provider import LLMProvider, get_default_provider
 
 _MIN_SUBQUESTIONS = 3
 _MAX_SUBQUESTIONS = 6
@@ -46,7 +45,7 @@ def _parse_sub_questions(text: str) -> list[str]:
 
 def plan_research(question: str, provider: LLMProvider | None = None) -> list[str]:
     """Return 3–6 sub-questions for `question`. `provider` is injectable for tests."""
-    provider = provider or OpenAIProvider(api_key=settings.openai_api_key)
+    provider = provider or get_default_provider()
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": question},
