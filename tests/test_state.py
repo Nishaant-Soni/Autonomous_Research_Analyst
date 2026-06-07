@@ -16,6 +16,8 @@ def test_initial_state_constructs():
         "max_iterations": 2,
         "report_md": "",
         "citations_valid": False,
+        "low_confidence": False,
+        "stripped_fraction": 0.0,
     }
     assert state["question"]
     assert state["max_iterations"] == 2

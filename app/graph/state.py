@@ -32,13 +32,17 @@ class Critique(BaseModel):
 
 
 class ResearchState(TypedDict):
-    """Shared state for the research graph, exactly per PRD §5.3.
+    """Shared state for the research graph (PRD §5.3, plus the validator's output signal).
 
     `evidence` accumulates across the critic loop, so it carries an additive reducer:
     LangGraph channels are last-value-wins by default, which would drop earlier evidence
     when the Researcher returns again on a loop-back. `operator.add` concatenates each
     node's returned list onto the existing one instead. The other fields are last-value-
     wins, which is what we want (e.g. the latest `critique`, the current `iteration`).
+
+    `low_confidence` / `stripped_fraction` extend §5.3: the citation validator (2.6) sets
+    them and the runner (3.2) reads them off final state to persist onto the session —
+    they are the node's only channel to the runner (a node must not touch the DB itself).
     """
 
     session_id: str
@@ -51,3 +55,5 @@ class ResearchState(TypedDict):
     max_iterations: int
     report_md: str
     citations_valid: bool
+    low_confidence: bool
+    stripped_fraction: float
