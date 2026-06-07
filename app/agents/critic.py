@@ -85,7 +85,11 @@ def critique_findings(
             "content": _build_user(question, plan, draft_findings, evidence),
         },
     ]
-    response = provider.complete(messages, text={"format": {"type": "json_object"}})
+    response = provider.complete(
+        messages,
+        text={"format": {"type": "json_object"}},
+        reasoning={"effort": "medium"},
+    )
     return _parse_critique(response.output_text)
 
 

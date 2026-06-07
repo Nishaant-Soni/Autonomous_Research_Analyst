@@ -59,7 +59,7 @@ def write_report(
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": user},
     ]
-    return provider.complete(messages).output_text
+    return provider.complete(messages, reasoning={"effort": "medium"}).output_text
 
 
 def writer_node(state: ResearchState) -> dict:
