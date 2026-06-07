@@ -13,9 +13,10 @@ Built so far:
 - **Foundation** — FastAPI service + Postgres (pgvector), one-command bring-up, local embedding model baked into the image.
 - **Retrieval layer** — document ingestion (chunk + embed + store), pgvector similarity search (RAG), and Tavily web search. Both retrievers return structured `Evidence`.
 - **Agent-graph foundation** — the shared `ResearchState` contract and `Critique` model (`app/graph/state.py`), with an additive reducer so evidence accumulates across the critic loop.
+- **Planner & Citation-validator nodes** — the Planner (`app/agents/planner.py`) decomposes a question into 3–6 sub-questions via one LLM call; the Citation validator (`app/agents/citation_validator.py`) is pure code that confirms every `[n]` marker resolves to a real evidence item and, when one doesn't, drops the whole unsupported claim, then renumbers and rebuilds the sources list so the report stays self-consistent.
 
-Not yet built: the agent nodes (planner/researcher/critic/writer/validator) and their
-graph wiring, the `/research` endpoints, evaluation harness, and UI.
+Not yet built: the Researcher/Critic/Writer nodes and their graph wiring, the
+`/research` endpoints, evaluation harness, and UI.
 
 ## HTTP endpoints
 
@@ -68,15 +69,16 @@ the local Hugging Face cache.
 # Fast unit tests (DB- and model-dependent tests are skipped)
 pytest -q
 
-# Full suite, including DB ingestion/retrieval, the real embedding model, and live web.
-# Needs Postgres running; the schema is created automatically by the test fixtures.
+# Full suite, including DB ingestion/retrieval, the real embedding model, live web,
+# and a live LLM call. Needs Postgres running; the schema is created by the fixtures.
 docker compose up -d db
-RUN_DB_TESTS=1 RUN_MODEL_TESTS=1 RUN_WEB_TESTS=1 pytest -q
+RUN_DB_TESTS=1 RUN_MODEL_TESTS=1 RUN_WEB_TESTS=1 RUN_LLM_TESTS=1 pytest -q
 ```
 
 - `RUN_DB_TESTS=1` enables tests that need Postgres (`DATABASE_URL` must point at it).
 - `RUN_MODEL_TESTS=1` enables tests that load the real embedding model.
 - `RUN_WEB_TESTS=1` enables the live Tavily web-search test (needs a real `TAVILY_API_KEY`).
+- `RUN_LLM_TESTS=1` enables the live LLM test (Planner) — needs a real `OPENAI_API_KEY`.
 
 ## Lint / format
 

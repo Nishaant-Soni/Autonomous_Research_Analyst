@@ -43,10 +43,14 @@ jobs:
       - name: Format check
         run: ruff format --check .
 
-      # Model-dependent tests (ingestion/retrieval/embedding-dim) are NOT run here:
-      # Hugging Face rate-limits shared CI runner IPs (HTTP 429), making model
-      # downloads unreliable. They run locally (cached model) and the model is baked
-      # into the Docker image. CI covers all unit tests + the Postgres schema test.
+      # External-dependency tests are NOT run here, by policy (no secrets, no cost,
+      # reliable runs). Their logic is covered by mocked unit tests, which DO run.
+      #  - Model-dependent (ingestion/retrieval/embedding-dim): Hugging Face rate-limits
+      #    shared CI runner IPs (HTTP 429), so downloads are unreliable. Covered locally
+      #    (cached model) and the model is baked into the Docker image.
+      #  - Live web (Tavily, RUN_WEB_TESTS) and live LLM (OpenAI, RUN_LLM_TESTS): need
+      #    API-key secrets and cost tokens.
+      # CI therefore covers all unit tests + the Postgres schema test.
       - name: Test
         env:
           DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/research
