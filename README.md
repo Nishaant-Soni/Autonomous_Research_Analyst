@@ -12,9 +12,10 @@ Built so far:
 
 - **Foundation** — FastAPI service + Postgres (pgvector), one-command bring-up, local embedding model baked into the image.
 - **Retrieval layer** — document ingestion (chunk + embed + store), pgvector similarity search (RAG), and Tavily web search. Both retrievers return structured `Evidence`.
+- **Agent-graph foundation** — the shared `ResearchState` contract and `Critique` model (`app/graph/state.py`), with an additive reducer so evidence accumulates across the critic loop.
 
-Not yet built: the agent graph (planner/researcher/critic/writer/validator), the
-`/research` endpoints, evaluation harness, and UI.
+Not yet built: the agent nodes (planner/researcher/critic/writer/validator) and their
+graph wiring, the `/research` endpoints, evaluation harness, and UI.
 
 ## HTTP endpoints
 
