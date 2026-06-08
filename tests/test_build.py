@@ -39,12 +39,15 @@ def _stub_common(monkeypatch):
 
 def test_critic_loop_runs_up_to_max_iterations_then_writes(monkeypatch):
     _stub_common(monkeypatch)
-    # critic always wants more research → the cap is what must stop the loop
+    # The C2-tuned gate requires `groundedness < 0.70 AND len(gaps) >= 2` — so the stub
+    # critic must satisfy BOTH for the loop to fire every iteration.
     monkeypatch.setattr(
         build,
         "critic_node",
         lambda s: {
-            "critique": Critique(groundedness=0.1, needs_more_research=True, gaps=["g"])
+            "critique": Critique(
+                groundedness=0.1, needs_more_research=True, gaps=["g1", "g2"]
+            )
         },
     )
     writer_seen_iteration = []

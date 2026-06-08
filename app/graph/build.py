@@ -2,9 +2,11 @@
 
 Planner → Researcher → Critic → (conditional) → Writer → CitationValidator → END.
 
-After the Critic, a conditional edge routes back to the Researcher while it still asks for
-more research *and* the iteration cap hasn't been reached; otherwise it goes to the Writer.
-The hard `max_iterations` cap guarantees termination (PRD §5.2).
+After the Critic, a conditional edge routes back to the Researcher only when the draft's
+groundedness is low AND the critic names ≥2 coverage gaps AND the iteration cap hasn't
+been reached; otherwise control goes to the Writer. The two-signal AND was tuned in C2 —
+see `_route_after_critic` below. The hard `max_iterations` cap guarantees termination
+(PRD §5.2).
 """
 
 from typing import Any
@@ -31,11 +33,23 @@ def _researcher_with_iteration(state: ResearchState) -> dict:
     return update
 
 
+# Loop-back gate (C2-tuned; see docs/iteration_28.md). The original gate
+# (`critique.needs_more_research`) was over-eager — the C2 A/B showed it fires on items
+# where one extra research pass dilutes focus more than it fills gaps (`rag-components`
+# +10pp, `prompt-injection` +9pp hallucination). Tightened to require BOTH signals to
+# agree: a low-groundedness draft AND multiple named coverage gaps. The critic node still
+# runs every pass (its critique is preserved for observability); only the edge back to
+# the researcher is gated.
+_LOOPBACK_GROUNDEDNESS_MAX = 0.70  # loop only when the draft is meaningfully shaky
+_LOOPBACK_GAPS_MIN = 2  # AND the critic names at least two uncovered angles
+
+
 def _route_after_critic(state: ResearchState) -> str:
     critique = state.get("critique")
     if (
         critique is not None
-        and critique.needs_more_research
+        and critique.groundedness < _LOOPBACK_GROUNDEDNESS_MAX
+        and len(critique.gaps) >= _LOOPBACK_GAPS_MIN
         and state["iteration"] < state["max_iterations"]
     ):
         return "researcher"
