@@ -80,7 +80,7 @@ def test_score_run_reads_artifacts_and_writes_scores_json(tmp_path: Path):
     _make_item(run_dir, "ok2", {"failed": False, "stripped_fraction": 0.4})
     _make_item(run_dir, "bad", {"failed": True, "error": "boom"})
 
-    scores = score_run(run_dir)
+    scores = score_run(run_dir, skip_ragas=True)
 
     # Returns the same dict it persisted to scores.json.
     on_disk = json.loads((run_dir / "scores.json").read_text())
@@ -102,7 +102,7 @@ def test_score_run_skips_subdirs_without_result_json(tmp_path: Path):
     _make_item(run_dir, "ok", {"failed": False, "stripped_fraction": 0.0})
     (run_dir / "halfwritten").mkdir()  # exists but no result.json
 
-    scores = score_run(run_dir)
+    scores = score_run(run_dir, skip_ragas=True)
 
     assert scores["item_count"] == 1
     assert "ok" in scores["metrics"]["citation_accuracy"]["per_item"]

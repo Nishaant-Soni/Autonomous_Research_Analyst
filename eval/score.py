@@ -6,10 +6,12 @@ alongside them. Designed to be extended: B2 will add Ragas metrics to the same f
 add latency/cost and the aggregate.
 
 Usage:
-    python -m eval.score                  # score the latest run dir
+    python -m eval.score                  # score the latest run dir (deterministic + Ragas)
     python -m eval.score --run-id <id>    # score a specific run
+    python -m eval.score --skip-ragas     # skip the Ragas pass (no LLM-judge cost)
 
-This stage does NOT run the graph or call any LLM — that's the Run stage's job.
+This stage does NOT re-run the graph — it only reads cached artifacts. Ragas does call
+the judge LLM (OpenAI), so each non-skipped run incurs token cost.
 """
 
 import argparse
@@ -18,6 +20,7 @@ import logging
 import sys
 from pathlib import Path
 
+from eval.metrics.artifacts import load_item_samples
 from eval.metrics.deterministic import (
     citation_accuracy_aggregate,
     citation_accuracy_per_item,
@@ -46,22 +49,36 @@ def _load_results(run_dir: Path) -> dict[str, dict]:
     return results
 
 
-def score_run(run_dir: Path) -> dict:
-    """Compute every deterministic metric defined so far. Writes `scores.json` and returns
-    the same dict for caller inspection / tests."""
+def score_run(run_dir: Path, skip_ragas: bool = False) -> dict:
+    """Compute every Score-stage metric and write `scores.json`. Returns the same dict.
+
+    Deterministic metrics always run (cheap, no LLM). Ragas runs by default; pass
+    `skip_ragas=True` to skip its judge-LLM cost (e.g. when iterating on the deterministic
+    path or when the eval extra isn't installed)."""
     results = _load_results(run_dir)
     per_item_citation = {
         item_id: citation_accuracy_per_item(res) for item_id, res in results.items()
     }
+    metrics: dict = {
+        "citation_accuracy": {
+            "aggregate": citation_accuracy_aggregate(per_item_citation),
+            "per_item": per_item_citation,
+        },
+    }
+
+    if not skip_ragas:
+        # Lazy import — the Ragas extra isn't required for deterministic-only scoring.
+        from eval.metrics.ragas_scorer import score_with_ragas
+
+        samples = load_item_samples(run_dir)
+        ragas_scores = score_with_ragas(samples)
+        metrics["ragas"] = ragas_scores["ragas"]
+        metrics["hallucination_rate"] = ragas_scores["hallucination_rate"]
+
     scores = {
         "run_id": run_dir.name,
         "item_count": len(results),
-        "metrics": {
-            "citation_accuracy": {
-                "aggregate": citation_accuracy_aggregate(per_item_citation),
-                "per_item": per_item_citation,
-            },
-        },
+        "metrics": metrics,
     }
     (run_dir / "scores.json").write_text(json.dumps(scores, indent=2))
     return scores
@@ -70,6 +87,11 @@ def score_run(run_dir: Path) -> dict:
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--run-id", help="run dir under eval/runs/ (defaults to latest)")
+    p.add_argument(
+        "--skip-ragas",
+        action="store_true",
+        help="skip the Ragas judge pass (deterministic metrics only)",
+    )
     return p.parse_args(argv)
 
 
@@ -81,15 +103,33 @@ def main() -> None:
     run_dir = _RUNS_DIR / args.run_id if args.run_id else _latest_run_dir()
     if not run_dir.is_dir():
         raise SystemExit(f"run dir not found: {run_dir}")
-    logger.info("scoring %s", run_dir)
-    scores = score_run(run_dir)
-    agg = scores["metrics"]["citation_accuracy"]["aggregate"]
-    logger.info(
-        "citation_accuracy: mean=%s (scored=%s, failed=%s)",
-        f"{agg['mean']:.3f}" if agg["mean"] is not None else "n/a",
-        agg["n_scored"],
-        agg["n_failed"],
-    )
+    logger.info("scoring %s (skip_ragas=%s)", run_dir, args.skip_ragas)
+    scores = score_run(run_dir, skip_ragas=args.skip_ragas)
+    for name, block in scores["metrics"].items():
+        # Each block is either {aggregate, per_item} (citation_accuracy, hallucination_rate)
+        # or {metric_name: {aggregate, per_item}} (the ragas block).
+        if "aggregate" in block:
+            agg = block["aggregate"]
+            mean_s = f"{agg['mean']:.3f}" if agg["mean"] is not None else "n/a"
+            logger.info(
+                "%s: mean=%s (scored=%s, failed=%s)",
+                name,
+                mean_s,
+                agg["n_scored"],
+                agg["n_failed"],
+            )
+        else:
+            for sub_name, sub_block in block.items():
+                agg = sub_block["aggregate"]
+                mean_s = f"{agg['mean']:.3f}" if agg["mean"] is not None else "n/a"
+                logger.info(
+                    "%s.%s: mean=%s (scored=%s, failed=%s)",
+                    name,
+                    sub_name,
+                    mean_s,
+                    agg["n_scored"],
+                    agg["n_failed"],
+                )
     logger.info("scores written to %s", run_dir / "scores.json")
 
 

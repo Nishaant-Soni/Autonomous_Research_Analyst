@@ -25,6 +25,19 @@ dev = [
     "httpx>=0.27",
     "ruff>=0.6",
 ]
+# Eval-harness-only (host-side). NOT in the Docker image, NOT in runtime deps.
+# `pip install -e ".[eval]"` to run the Ragas Score stage. Pins are deliberate:
+# - ragas >=0.3 is broken against the langchain-community split (imports a removed
+#   `chat_models.vertexai` module); 0.2.x is the last stable era.
+# - The pre-1.0 langchain stack is what works with both ragas 0.2 and our
+#   langgraph <1 runtime pin. The `langchain-classic` shim (auto-installed by
+#   langchain>=1) must NOT be in the env (it conflicts with langchain-core <1).
+eval = [
+    "ragas>=0.2,<0.3",
+    "langchain>=0.3,<1",
+    "langchain-community>=0.3,<0.4",
+    "langchain-openai>=0.3,<0.4",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
