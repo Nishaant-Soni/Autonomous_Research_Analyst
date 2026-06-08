@@ -11,10 +11,16 @@ connection is a context manager that closes on exit, so callers must keep the
 `app.main`'s lifespan and `scripts/run_once`.
 """
 
+import logging
+from datetime import datetime, timezone
 from pathlib import Path
+
+from sqlalchemy import update
 
 from app.config import settings
 from app.db.session import engine
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
@@ -46,3 +52,43 @@ async def init_db(checkpointer) -> None:
     """
     apply_schema()
     await checkpointer.setup()
+
+
+# Terminal session statuses: anything else means a run was in flight when the API last
+# stopped (deploy, OOM, crash, dev rebuild). The startup sweep below promotes them to
+# `failed` so the UI / API consumers see an honest terminal state instead of a zombie.
+_TERMINAL_STATUSES = ("done", "failed")
+_ABANDONED_ERROR = "abandoned at startup"
+
+
+def mark_abandoned_sessions() -> int:
+    """Promote any non-terminal `research_sessions` row to `failed` with a clear error.
+
+    Called once at startup (see `app.main.lifespan`). The runner has no resume logic —
+    when the API process dies mid-run, asyncio cancels the task and the DB row stays at
+    whatever status it last reached (`researching`, `critiquing`, …). Without this sweep,
+    those rows are zombies forever. The fix is symmetric with the runner's own failure
+    path: same `status="failed"`, same `error` field, `completed_at` stamped now.
+
+    Returns the number of rows updated; logged at INFO when non-zero. Safe to call on
+    every boot (idempotent: already-terminal rows are skipped by the WHERE clause).
+    """
+    # Lazy import — Models live alongside engine bindings; importing at module top would
+    # complicate test fixtures that monkey-patch the session before init.
+    from app.db.models import ResearchSession
+    from app.db.session import SessionLocal
+
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        result = db.execute(
+            update(ResearchSession)
+            .where(~ResearchSession.status.in_(_TERMINAL_STATUSES))
+            .values(status="failed", error=_ABANDONED_ERROR, completed_at=now)
+        )
+        db.commit()
+        n = result.rowcount
+    if n:
+        logger.warning(
+            "marked %d abandoned research session(s) as failed at startup", n
+        )
+    return n

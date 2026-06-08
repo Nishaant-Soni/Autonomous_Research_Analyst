@@ -17,6 +17,8 @@ dependencies = [
     "tavily-python>=0.5",
     "langgraph>=0.6,<1",
     "langgraph-checkpoint-postgres>=2.0,<3",
+    "pypdf>=5.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]

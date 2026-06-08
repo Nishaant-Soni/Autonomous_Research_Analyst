@@ -2,10 +2,12 @@
 
 import asyncio
 import json
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.progress import create_queue, get_queue, remove_queue
@@ -53,6 +55,51 @@ async def start_research(body: ResearchIn, request: Request) -> ResearchOut:
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
     return ResearchOut(session_id=session_id)
+
+
+class ResearchSummaryOut(BaseModel):
+    """Per-row payload for the recent-runs sidebar (plan 5.7). Deliberately leaner than
+    `ResearchStatusOut` — no `report_md`, no `citations_valid` (those would need a join
+    on `reports` per row; cheap detail endpoint already returns them per click)."""
+
+    session_id: int
+    question: str
+    status: str
+    low_confidence: bool
+    created_at: datetime
+    completed_at: datetime | None = None
+
+
+_LIST_LIMIT_MAX = 100
+_LIST_LIMIT_DEFAULT = 20
+
+
+@router.get("/research", response_model=list[ResearchSummaryOut])
+def list_research(
+    limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
+    db: Session = Depends(get_db),
+) -> list[ResearchSummaryOut]:
+    """Recent runs, newest first. Used by the React sidebar to let a reviewer flip between
+    questions. v1 portfolio scale is tens of rows; cursor pagination is overkill — keep
+    plain `?limit=N`. Clamp protects against accidental large queries."""
+    sessions = (
+        db.execute(
+            select(ResearchSession).order_by(ResearchSession.id.desc()).limit(limit)
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        ResearchSummaryOut(
+            session_id=s.id,
+            question=s.question,
+            status=s.status,
+            low_confidence=s.low_confidence,
+            created_at=s.created_at,
+            completed_at=s.completed_at,
+        )
+        for s in sessions
+    ]
 
 
 class ResearchStatusOut(BaseModel):

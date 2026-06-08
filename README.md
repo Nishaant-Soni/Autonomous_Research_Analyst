@@ -16,20 +16,23 @@ Built so far:
 - **All five agent nodes** — Planner (`app/agents/planner.py`, decomposes a question into 3–6 sub-questions), Researcher (`app/agents/researcher.py`, a tool-using loop over `web_search` + `rag_retrieve` that gathers `Evidence` and drafts findings), Critic (`app/agents/critic.py`, LLM-as-judge emitting a groundedness score + `needs_more_research`), Writer (`app/agents/writer.py`, synthesizes a structured report citing evidence by `[ev:i]`), and Citation validator (`app/agents/citation_validator.py`, pure code that drops unsupported claims, then assigns the final `[1..k]` numbering + sources list).
 - **The research graph (Phase 2 complete)** — `app/graph/build.py` wires the five nodes into a LangGraph `StateGraph` with a bounded critic loop (`max_iterations`) and Postgres checkpointing. `python -m scripts.run_once "<question>"` runs the whole pipeline end-to-end and prints a cited Markdown report.
 - **Async research API (Phase 3 complete)** — `POST /research` creates a session and kicks off the graph run as a background task, returning a `session_id` immediately. A shared runner (`app/graph/runner.py`) drives the session status through `planning → researching → critiquing → writing → validating → done | failed`, persists the report and the citation validator's low-confidence signal, and pushes per-agent progress onto an in-process queue (`app/api/progress.py`). `GET /research/{id}` polls status (and returns the report once done), `GET /research/{id}/evidence` inspects the gathered evidence, and `GET /research/{id}/stream` streams per-agent progress over SSE (status names the currently-running stage, via LangGraph node-start events). `run_once` now shares this runner.
-- **Reliability + observability (Phase 3 complete)** — every LLM call has a per-call timeout + automatic retries, and each agent has a token budget (PRD §12); a failed agent fails the session cleanly (`failed` + `error`) rather than hanging. With a `LANGSMITH_API_KEY` set, runs are traced in LangSmith with per-agent node spans plus per-call token usage and latency (`app/observability.py`).
+- **Reliability + observability (Phase 3 complete)** — every LLM call has a per-call timeout + automatic retries, and each agent has a token budget (PRD §12); a failed agent fails the session cleanly (`failed` + `error`) rather than hanging. The API startup sweeps any rows left non-terminal by a previous process death (deploy / OOM / dev rebuild) and marks them `failed` with `error="abandoned at startup"` — see `app/db/init_db.py:mark_abandoned_sessions`. With a `LANGSMITH_API_KEY` set, runs are traced in LangSmith with per-agent node spans plus per-call token usage and latency (`app/observability.py`).
 - **Eval dataset + run harness (Phase 4 Group A complete)** — `eval/golden.jsonl` holds 16 schema-validated research questions (10 web + 6 corpus), each with reference key facts used as Ragas ground truth. Corpus items are backed by a committed, self-authored seed corpus (`eval/corpus/*.md`) and the loader enforces that every corpus fact is verbatim-supported by its source doc. `python -m eval.run` ingests the corpus idempotently, runs the full graph per item, persists per-question artifacts (`report.md` / `evidence.jsonl` / `result.json`) to `eval/runs/<run-id>/<item.id>/`, and runs a deterministic retrievability check confirming every corpus fact is actually surfaced by the production embedder + retriever. Run/score/report separation — metrics in Group B read these cached artifacts and never re-run the pipeline.
 - **Eval Score + Report stages (Phase 4 Group B complete)** — `python -m eval.score` reads cached artifacts and writes `scores.json` with all six PRD §10 metric families: deterministic citation accuracy + Ragas-judged faithfulness, answer relevancy, context recall, the derived `hallucination_rate = 1 − faithfulness`, wall-clock latency, and per-item cost in USD (sourced from LangSmith token usage × a pinned `gpt-5.4-mini` price table). `python -m eval.report` then renders a small, **committed** Markdown report at `eval/results/<run-id>.md` so iterations are comparable. Graceful degrades on a missing LangSmith key (cost block omitted, never crashes) and `--skip-ragas` keeps the deterministic-only path available.
+- **Frontend scaffold + question submit + file uploads + recent-runs sidebar (Phase 5 Group A complete)** — `frontend/`: Vite + React 18 + TypeScript + Tailwind. The React app posts a question to `POST /research` and shows the returned `session_id`. An optional collapsible section accepts **real file uploads** (`.txt`, `.md`, `.pdf` — PDFs parsed server-side via `pypdf`) sent as multipart to `POST /documents/upload`; the existing JSON `POST /documents` path stays for programmatic use. A **recent-runs sidebar** polls `GET /research?limit=20` every 3 s and lets a reviewer flip between past questions. CORS is regex-scoped to localhost on any port. `docker-compose up` brings db + api + frontend up together (the frontend service runs Vite's dev server on `5173`). The live progress / report / evidence inspector arrive in Group B.
 - **Critic-loop A/B + gate tuning (Phase 4 C2 complete)** — `python -m eval.compare` diffs two scored runs; we ran three arms over the 16-item golden set. The first A/B (`eval/results/critic_loop_AB.md`) showed the original `needs_more_research` gate was over-eager: ON 5.5% hallucination vs OFF 4.8%, at **2× latency and 2× cost**. Per-item picture was a 7-help / 7-hurt / 2-tied wash, with no clean "question-type" split — the gate fired too liberally across the board. We then **tightened the routing** to `groundedness < 0.70 AND len(gaps) ≥ 2` and re-ran: **hallucination measured at 4.1% (a 1.4pp drop vs original, ~25% relative)** at cost within 22% of OFF. The tightened gate fires on 3 of 16 items and stays essentially identical to OFF on the rest. At n=16 the delta is at the edge of significance (run-to-run noise ≈ ±1–2pp); what's robust is the *direction* (tightened ≥ OFF ≥ original on quality, tightened ≈ OFF on cost). The full 3-way verdict is committed at `eval/results/critic_three_way.md`.
 
-Not yet built: Phase 5 (UI + README polish).
+Not yet built: Phase 5 Group B (SSE-driven progress timeline + Markdown report + side-panel evidence inspector) and Group C (README rewrite leading with eval numbers + Mermaid architecture diagram).
 
 ## HTTP endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/health` | Liveness check |
-| POST | `/documents` | Ingest a document: chunk + embed + store |
+| POST | `/documents` | Ingest a document (JSON `raw_text`): chunk + embed + store |
+| POST | `/documents/upload` | Ingest a file upload (`.txt`/`.md`/`.pdf`, ≤5MB): chunk + embed + store |
 | POST | `/research` | Start an async research run; returns a `session_id` immediately (202) |
+| GET | `/research?limit=N` | List recent runs (slim summaries) — drives the React sidebar |
 | GET | `/research/{id}` | Poll run status; once `done`, returns the report + `citations_valid` (+ `low_confidence`) |
 | GET | `/research/{id}/evidence` | Inspect the structured evidence gathered for the session |
 | GET | `/research/{id}/stream` | SSE stream of per-agent progress while the run executes |
@@ -38,36 +41,55 @@ Interactive API docs render at `http://localhost:8000/docs`.
 
 ## Quickstart (Docker)
 
-Brings up the API + Postgres (with pgvector). The DB schema is applied automatically on
-first start (fresh volume); the API image has the embedding model baked in, so there's
-no download on first run.
+Brings up the API + Postgres (with pgvector) + the React UI. The DB schema is applied
+automatically on first start (fresh volume); the API image has the embedding model baked
+in, so there's no download on first run. The frontend container runs Vite's dev server
+and installs its `node_modules` into a named volume on first boot (~30s one-time cost).
 
 ```bash
 docker-compose up --build
 
-# Liveness check
-curl localhost:8000/health            # -> {"status":"ok"}
+# Open the UI
+open http://localhost:5173                  # React app (Vite dev)
+# API also available directly:
+curl localhost:8000/health                  # -> {"status":"ok"}
+open http://localhost:8000/docs             # OpenAPI / Swagger
 
-# Ingest a document
+# Ingest a file via the upload endpoint (the UI uses this path)
+curl -X POST localhost:8000/documents/upload -F "file=@path/to/notes.pdf"
+# -> {"document_id": 1, "chunks": N}
+
+# Or ingest raw text via the JSON endpoint (handy for scripts / CI)
 curl -X POST localhost:8000/documents \
   -H "Content-Type: application/json" \
   -d '{"raw_text": "Paris is the capital of France.", "title": "geo"}'
-# -> {"document_id": 1, "chunks": 1}
+# -> {"document_id": 2, "chunks": 1}
 ```
 
 ## Local development
 
 Requires a running Postgres with pgvector. The easiest path is to run just the DB in
-Docker and the app on the host:
+Docker, the backend on the host with `--reload`, and the frontend on the host with
+`npm run dev` (also hot-reload):
 
 ```bash
+# --- backend ---
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env                  # fill in keys (OpenAI/Tavily); embeddings need none
 
 docker compose up -d db               # Postgres + pgvector on localhost:5432
 uvicorn app.main:app --reload         # http://localhost:8000/docs
+
+# --- frontend (separate shell) ---
+cd frontend
+npm install                           # one-time
+npm run dev                           # http://localhost:5173
 ```
+
+The frontend talks to the API at `VITE_API_URL` (default `http://localhost:8000`).
+CORS in `app/main.py` already allows the Vite dev origin (`http://localhost:5173`). If
+you change the API port, set `VITE_API_URL` in `frontend/.env.local`.
 
 The first embedding call downloads the model (`BAAI/bge-small-en-v1.5`, 384-dim) into
 the local Hugging Face cache.
@@ -127,10 +149,17 @@ RUN_DB_TESTS=1 RUN_MODEL_TESTS=1 RUN_WEB_TESTS=1 RUN_LLM_TESTS=1 pytest -q
 - `RUN_WEB_TESTS=1` enables the live Tavily web-search test (needs a real `TAVILY_API_KEY`).
 - `RUN_LLM_TESTS=1` enables the live LLM test (Planner) — needs a real `OPENAI_API_KEY`.
 
+The frontend has no Jest/Vitest suite in Group A (straight HTML/CSS plumbing — easier
+to catch visually). TypeScript itself is the gate:
+
+```bash
+cd frontend && npm run typecheck       # tsc -b --noEmit, must be clean
+```
+
 ## Lint / format
 
 ```bash
-ruff check .          # lint
+ruff check .          # lint (backend)
 ruff format .         # apply formatting (CI runs `ruff format --check .`)
 ```
 
@@ -149,3 +178,4 @@ All settings come from environment variables / `.env` (see [`.env.example`](./.e
 | `LLM_MAX_RETRIES` | LLM retries for transient errors (default `2`) |
 | `EMBEDDING_MODEL` | Local embedding model (default `BAAI/bge-small-en-v1.5`) |
 | `MAX_ITERATIONS` | Hard cap on the critic loop (default `2`) |
+| `VITE_API_URL` (frontend) | API base URL the React app calls (default `http://localhost:8000`) — set in `frontend/.env.local` for host dev, or in `docker-compose.yml` for the compose frontend service |

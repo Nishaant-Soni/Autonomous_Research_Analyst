@@ -21,6 +21,20 @@ def test_empty_question_is_rejected():
     assert resp.status_code == 422
 
 
+def test_list_research_clamps_limit_at_validation_layer():
+    """Validation: limit > max returns 422 (Pydantic Query constraint) — no DB needed.
+    Belongs alongside the empty-question test as a pure schema check."""
+    client = TestClient(app)
+    resp = client.get("/research", params={"limit": 1000})
+    assert resp.status_code == 422
+
+
+def test_list_research_rejects_zero_or_negative_limit():
+    client = TestClient(app)
+    assert client.get("/research", params={"limit": 0}).status_code == 422
+    assert client.get("/research", params={"limit": -5}).status_code == 422
+
+
 def test_stream_drains_queue_events():
     # The drain path reads only the in-process queue (no DB): seed it, then stream it out.
     from app.api.progress import create_queue, remove_queue
@@ -156,6 +170,63 @@ def test_get_evidence_returns_web_and_rag_items():
     assert web["source_url"] == "https://example.com"
     rag = next(i for i in items if i["retriever"] == "rag")
     assert rag["source_chunk_id"] == chunk_id
+
+
+@requires_db
+def test_list_research_returns_recent_first_with_summary_shape():
+    """Plan 5.7: the sidebar query. Three sessions inserted in order; the list returns them
+    newest-first, with the slim summary shape (no report_md / citations_valid)."""
+    from app.db.models import ResearchSession
+    from app.db.session import SessionLocal
+
+    with SessionLocal() as db:
+        for q, status in [
+            ("first question", "done"),
+            ("second question", "researching"),
+            ("third question", "planning"),
+        ]:
+            db.add(ResearchSession(question=q, status=status))
+        db.commit()
+
+    client = TestClient(app)
+    rows = client.get("/research").json()
+
+    assert [r["question"] for r in rows] == [
+        "third question",
+        "second question",
+        "first question",
+    ]
+    # Summary shape only — confirm report_md / citations_valid are NOT leaking from this
+    # endpoint (those live on the detail endpoint).
+    keys = set(rows[0].keys())
+    assert {"session_id", "question", "status", "low_confidence", "created_at"} <= keys
+    assert "report_md" not in keys
+    assert "citations_valid" not in keys
+
+
+@requires_db
+def test_list_research_honors_explicit_limit():
+    from app.db.models import ResearchSession
+    from app.db.session import SessionLocal
+
+    with SessionLocal() as db:
+        for i in range(5):
+            db.add(ResearchSession(question=f"q{i}", status="done"))
+        db.commit()
+
+    client = TestClient(app)
+    rows = client.get("/research", params={"limit": 2}).json()
+
+    assert len(rows) == 2
+    assert [r["question"] for r in rows] == ["q4", "q3"]  # newest two
+
+
+@requires_db
+def test_list_research_empty_set_returns_empty_list():
+    client = TestClient(app)
+    resp = client.get("/research")
+    assert resp.status_code == 200
+    assert resp.json() == []
 
 
 @requires_db
