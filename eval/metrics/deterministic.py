@@ -24,9 +24,19 @@ def citation_accuracy_per_item(result_json: dict) -> float | None:
     return 1.0 - result_json["stripped_fraction"]
 
 
-def citation_accuracy_aggregate(per_item: dict[str, float | None]) -> dict:
-    """Aggregate over successful items only. Failed items are counted separately so the
-    headline is "X% over N scored, M failed" rather than a number that silently drops data."""
+def latency_per_item(result_json: dict) -> float | None:
+    """Per-item wall-clock latency in seconds (PRD §10). Plan 4.4 decision: use the
+    eval runner's wall-clock from `result.json`, not LangSmith — same number minus
+    millis of overhead, no extra network call."""
+    if result_json.get("failed"):
+        return None
+    return float(result_json["latency_seconds"])
+
+
+def aggregate(per_item: dict[str, float | None]) -> dict:
+    """Standard `{n_scored, n_failed, mean, min, max}` aggregate. Failed items (None) are
+    counted separately so the headline is "X over N scored, M failed" rather than a number
+    that silently drops data. Shared by citation accuracy + latency + (later) cost."""
     scored = {k: v for k, v in per_item.items() if v is not None}
     if not scored:
         return {
@@ -44,3 +54,7 @@ def citation_accuracy_aggregate(per_item: dict[str, float | None]) -> dict:
         "min": min(values),
         "max": max(values),
     }
+
+
+# Back-compat alias — existing call site reads cleaner with the metric-specific name.
+citation_accuracy_aggregate = aggregate

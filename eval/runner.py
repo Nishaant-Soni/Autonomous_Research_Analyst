@@ -17,13 +17,24 @@ from app.graph.runner import build_initial_state
 from eval.dataset import GoldenItem
 
 
-async def run_one_question(item: GoldenItem) -> dict:
+async def run_one_question(item: GoldenItem, run_id: str | None = None) -> dict:
     """Run the graph for one golden item. Returns {final, latency_seconds} on success;
-    raises on graph failure (caller decides whether to continue the run)."""
+    raises on graph failure (caller decides whether to continue the run).
+
+    `run_id` is the parent eval run's id (`eval/runs/<run-id>/`); when provided, it is
+    forwarded to LangSmith as trace metadata + a `run_name` so the Score stage (B3) can
+    query token usage per item via the LangSmith API. `None` runs unlabeled (still traced
+    if LANGSMITH_API_KEY is set, just without the eval-specific tags)."""
     graph = build_graph()  # no checkpointer: eval is one-shot, no resume needed
     initial = build_initial_state(item.id, item.question)
+    config: dict = {}
+    if run_id is not None:
+        config = {
+            "metadata": {"eval_run_id": run_id, "eval_item_id": item.id},
+            "run_name": f"eval:{run_id}:{item.id}",
+        }
     start = time.perf_counter()
-    final = await graph.ainvoke(initial)
+    final = await graph.ainvoke(initial, config=config or None)
     latency = time.perf_counter() - start
     return {"final": final, "latency_seconds": latency}
 

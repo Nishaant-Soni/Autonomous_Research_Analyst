@@ -76,8 +76,16 @@ def _make_item(run_dir: Path, item_id: str, result: dict) -> None:
 def test_score_run_reads_artifacts_and_writes_scores_json(tmp_path: Path):
     run_dir = tmp_path / "20990101T000000Z"
     run_dir.mkdir()
-    _make_item(run_dir, "ok1", {"failed": False, "stripped_fraction": 0.0})
-    _make_item(run_dir, "ok2", {"failed": False, "stripped_fraction": 0.4})
+    _make_item(
+        run_dir,
+        "ok1",
+        {"failed": False, "stripped_fraction": 0.0, "latency_seconds": 30.0},
+    )
+    _make_item(
+        run_dir,
+        "ok2",
+        {"failed": False, "stripped_fraction": 0.4, "latency_seconds": 60.0},
+    )
     _make_item(run_dir, "bad", {"failed": True, "error": "boom"})
 
     scores = score_run(run_dir, skip_ragas=True)
@@ -99,7 +107,11 @@ def test_score_run_skips_subdirs_without_result_json(tmp_path: Path):
     # the score stage — it just gets skipped with a warning.
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    _make_item(run_dir, "ok", {"failed": False, "stripped_fraction": 0.0})
+    _make_item(
+        run_dir,
+        "ok",
+        {"failed": False, "stripped_fraction": 0.0, "latency_seconds": 1.0},
+    )
     (run_dir / "halfwritten").mkdir()  # exists but no result.json
 
     scores = score_run(run_dir, skip_ragas=True)

@@ -86,7 +86,7 @@ async def _main(args: argparse.Namespace) -> int:
             item_dir = run_dir / item.id
             logger.info("running %s (%s)", item.id, item.target)
             try:
-                result = await run_one_question(item)
+                result = await run_one_question(item, run_id=run_id)
                 persist_artifacts(item_dir, item, result)
                 per_item.append(
                     {

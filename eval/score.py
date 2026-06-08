@@ -22,8 +22,9 @@ from pathlib import Path
 
 from eval.metrics.artifacts import load_item_samples
 from eval.metrics.deterministic import (
-    citation_accuracy_aggregate,
+    aggregate,
     citation_accuracy_per_item,
+    latency_per_item,
 )
 
 logger = logging.getLogger("eval.score")
@@ -59,10 +60,17 @@ def score_run(run_dir: Path, skip_ragas: bool = False) -> dict:
     per_item_citation = {
         item_id: citation_accuracy_per_item(res) for item_id, res in results.items()
     }
+    per_item_latency = {
+        item_id: latency_per_item(res) for item_id, res in results.items()
+    }
     metrics: dict = {
         "citation_accuracy": {
-            "aggregate": citation_accuracy_aggregate(per_item_citation),
+            "aggregate": aggregate(per_item_citation),
             "per_item": per_item_citation,
+        },
+        "latency_seconds": {
+            "aggregate": aggregate(per_item_latency),
+            "per_item": per_item_latency,
         },
     }
 
@@ -74,6 +82,16 @@ def score_run(run_dir: Path, skip_ragas: bool = False) -> dict:
         ragas_scores = score_with_ragas(samples)
         metrics["ragas"] = ragas_scores["ragas"]
         metrics["hallucination_rate"] = ragas_scores["hallucination_rate"]
+
+    # Cost from LangSmith token counts (B3.3). Degrades cleanly: no key → no cost block.
+    from eval.metrics.cost import fetch_cost_per_item
+
+    per_item_cost = fetch_cost_per_item(run_dir.name, list(results.keys()))
+    if per_item_cost is not None:
+        metrics["cost_usd"] = {
+            "aggregate": aggregate(per_item_cost),
+            "per_item": per_item_cost,
+        }
 
     scores = {
         "run_id": run_dir.name,
