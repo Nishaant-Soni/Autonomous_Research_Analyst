@@ -29,10 +29,26 @@ from app.models.evidence import Evidence
 logger = logging.getLogger(__name__)
 
 _REF_RE = re.compile(r"\[ev:(\d+)\]")
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")  # naive but deterministic, body-only
+# Sentence boundary: a `.`/`!`/`?` followed by whitespace. Deterministic and body-only.
+# Naked, this splits on internal periods in common abbreviations (e.g. "U.S.") and would
+# leave dangling fragments after stripping. We pre-protect a small list of abbreviations
+# below — failing safe (any drop covers the whole real sentence, never half of it).
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _SOURCES_HEADER_RE = re.compile(
     r"^\s{0,3}#{1,6}\s*sources\b.*$", re.IGNORECASE | re.MULTILINE
 )
+# Common abbreviations whose internal `.` would otherwise trip the sentence splitter.
+# Longer alternatives must come first (Python `re` picks the first matching alternative
+# at a position), so "U.S.A." matches before "U.S.". Case-sensitive on purpose — these
+# are the canonical forms; broadening to IGNORECASE would invite false positives.
+_ABBREVIATIONS = (
+    "U.S.A.", "U.S.", "U.K.", "U.N.", "E.U.", "D.C.",
+    "Dr.", "Mr.", "Mrs.", "Ms.", "Prof.", "Sr.", "Jr.", "St.",
+    "e.g.", "i.e.", "etc.", "vs.", "cf.",
+    "Inc.", "Ltd.", "Co.", "Corp.",
+)
+_ABBREV_RE = re.compile("|".join(re.escape(a) for a in _ABBREVIATIONS))
+_DOT_PLACEHOLDER = "\x00"  # NUL: can't legally appear in the Writer's Markdown output
 # If more than this fraction of cited claims must be stripped, the report is too thin to trust.
 _LOW_CONFIDENCE_THRESHOLD = 0.5
 _SOURCES_HEADING = "## Sources"
@@ -99,6 +115,21 @@ def _split_at_sources(report_md: str) -> tuple[str, str]:
     return report_md[: match.start()], report_md[match.start() :]
 
 
+def _split_sentences(line: str) -> list[str]:
+    """Split `line` into sentences, protecting common abbreviations from the naive splitter.
+
+    Abbreviation periods are swapped for a NUL placeholder before the regex runs, then
+    restored on each returned piece. If an abbreviation is mis-classified (e.g. an `Inc.`
+    that actually ends a real sentence), we under-split rather than over-split — the
+    strip path then drops the whole joined unit, which is the safe direction (a claim
+    that can't be cited simply doesn't appear). Over-splitting would leave fragments.
+    """
+    protected = _ABBREV_RE.sub(
+        lambda m: m.group(0).replace(".", _DOT_PLACEHOLDER), line
+    )
+    return [p.replace(_DOT_PLACEHOLDER, ".") for p in _SENTENCE_SPLIT_RE.split(protected)]
+
+
 def _strip_orphan_sentences(body: str, valid_max: int) -> tuple[str, float]:
     """Drop every sentence carrying an unresolved `[ev:i]` reference. Operate per line so
     Markdown structure (headers, list items, blank lines) is preserved; within a line the
@@ -114,7 +145,7 @@ def _strip_orphan_sentences(body: str, valid_max: int) -> tuple[str, float]:
             continue
 
         kept: list[str] = []
-        for sentence in _SENTENCE_SPLIT_RE.split(line):
+        for sentence in _split_sentences(line):
             refs = [int(m) for m in _REF_RE.findall(sentence)]
             if refs:
                 total_cited += 1

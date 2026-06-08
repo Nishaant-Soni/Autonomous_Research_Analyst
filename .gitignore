@@ -19,3 +19,7 @@ venv/
 node_modules/
 docs/
 IMPLEMENTATION_PLAN.md
+
+# Eval per-run artifacts (the harness writes timestamped run dirs here; the final versioned
+# results report is what gets committed, not every debug run).
+eval/runs/

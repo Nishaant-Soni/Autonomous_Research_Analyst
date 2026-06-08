@@ -4,10 +4,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.db.models import Chunk, Document
 from app.db.session import get_db
-from app.embeddings import embed_documents
-from app.ingest.chunking import chunk_text
+from app.ingest.store import ingest_document
 
 router = APIRouter()
 
@@ -25,26 +23,15 @@ class DocumentOut(BaseModel):
 
 
 @router.post("/documents", response_model=DocumentOut)
-def ingest_document(doc: DocumentIn, db: Session = Depends(get_db)) -> DocumentOut:
-    document = Document(
+def ingest_document_endpoint(
+    doc: DocumentIn, db: Session = Depends(get_db)
+) -> DocumentOut:
+    document_id, chunks = ingest_document(
+        db,
         raw_text=doc.raw_text,
         title=doc.title,
         source_uri=doc.source_uri,
         doc_metadata=doc.metadata,
     )
-    db.add(document)
-    db.flush()  # assigns document.id without committing yet
-
-    pieces = chunk_text(doc.raw_text)
-    vectors = embed_documents(pieces)
-    for index, (content, embedding) in enumerate(zip(pieces, vectors, strict=True)):
-        db.add(
-            Chunk(
-                document_id=document.id,
-                chunk_index=index,
-                content=content,
-                embedding=embedding,
-            )
-        )
     db.commit()
-    return DocumentOut(document_id=document.id, chunks=len(pieces))
+    return DocumentOut(document_id=document_id, chunks=chunks)

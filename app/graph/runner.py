@@ -34,7 +34,9 @@ _NODE_STATUS = {
 }
 
 
-def _initial_state(session_id: str, question: str) -> dict:
+def build_initial_state(session_id: str, question: str) -> dict:
+    """Initial `ResearchState` for a new run. Public so the eval harness can build the same
+    state without going through `run_research` (which writes a DB session row)."""
     return {
         "session_id": session_id,
         "question": question,
@@ -106,7 +108,7 @@ async def run_research(session_id, question, checkpointer, queue=None) -> dict |
     config = {"configurable": {"thread_id": str(session_id)}}
     try:
         async for ev in graph.astream_events(
-            _initial_state(str(session_id), question), config, version="v2"
+            build_initial_state(str(session_id), question), config, version="v2"
         ):
             if ev["event"] == "on_chain_start":
                 status = _NODE_STATUS.get(ev.get("name"))

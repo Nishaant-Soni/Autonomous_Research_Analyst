@@ -94,6 +94,32 @@ def test_high_orphan_fraction_sets_low_confidence(caplog):
     assert any("stripped" in r.message for r in caplog.records)
 
 
+def test_abbreviation_period_does_not_split_sentence_mid_abbreviation():
+    # Without abbreviation protection, "The U.S. has growth [ev:9]." would split into
+    # ["The U.S.", "has growth [ev:9]."] — only the orphan-carrying half would be dropped,
+    # leaving the fragment "The U.S." in the report. The protected splitter keeps the
+    # whole real sentence together, so the strip drops it wholesale (fail-safe).
+    report = "The U.S. has rapid AI growth [ev:9]. Real claim [ev:0]."
+    result = validate_citations(report, _web_evidence(1))
+
+    assert result.citations_valid is False
+    assert "U.S." not in result.cleaned_report  # the fragment is gone, not retained
+    assert "rapid AI growth" not in result.cleaned_report
+    assert "Real claim [1]." in result.cleaned_report
+    assert "[1] https://e0.example" in result.cleaned_report
+
+
+def test_abbreviation_protection_handles_multiple_forms_in_one_line():
+    # e.g. (Latin) + Dr. (title) + Inc. (business) all on one line; the unresolved ref is
+    # the only thing that causes a drop, and the abbreviations don't fragment the sentence.
+    report = "Dr. Smith of Acme Inc. studied LLMs, e.g. the 7B class [ev:0]. Bad [ev:9]."
+    result = validate_citations(report, _web_evidence(1))
+
+    assert result.citations_valid is False
+    assert "Dr. Smith of Acme Inc. studied LLMs, e.g. the 7B class [1]." in result.cleaned_report
+    assert "Bad" not in result.cleaned_report
+
+
 def test_render_source_line_for_web_and_rag():
     web = Evidence(content="x", retriever="web", source_url="https://a.example")
     rag = Evidence(content="y", retriever="rag", source_chunk_id=42)
