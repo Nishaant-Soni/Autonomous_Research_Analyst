@@ -18,17 +18,16 @@ Evaluated against a [16-item golden dataset](eval/golden.jsonl) covering RAG, LL
 | **Context recall** | **96.9%** |
 | **Hallucination rate** (1 − faithfulness) | **4.1%** |
 | Latency / item | 46.5 s |
-| Cost / item | $0.017 |
 
 ### Critic-loop A/B
 
 The critic loop was tuned across three arms. The key finding: the original `needs_more_research` gate was over-eager — it fired on every item and produced a net-wash 7-help / 7-hurt picture at 2× cost. Tightening to **two independent signals** (low groundedness *and* multiple named gaps) cut hallucination by ~25% at near-OFF cost:
 
-| Arm | Hallucination rate | Latency / item | Cost / item |
-|---|---|---|---|
-| Original gate (`needs_more_research`) | 5.5% | 77.6 s | $0.028 |
-| Gate OFF (no loop-back) | 4.8% | 40.6 s | $0.014 |
-| **Tightened** (`groundedness < 0.70 AND gaps ≥ 2`) | **4.1%** | 46.5 s | $0.017 |
+| Arm | Hallucination rate | Latency / item |
+|---|---|---|
+| Original gate (`needs_more_research`) | 5.5% | 77.6 s |
+| Gate OFF (no loop-back) | 4.8% | 40.6 s |
+| **Tightened** (`groundedness < 0.70 AND gaps ≥ 2`) | **4.1%** | 46.5 s |
 
 The tightened gate fires on exactly 3 of 16 items — precisely where a second research pass is worth paying for. Full 3-way breakdown: [`eval/results/critic_three_way.md`](eval/results/critic_three_way.md)
 
@@ -45,7 +44,7 @@ flowchart TD
     subgraph backend["FastAPI Backend · Python 3.11"]
         API["REST + SSE Endpoints"]
 
-        subgraph graph["LangGraph StateGraph  (bounded critic loop)"]
+        subgraph graph["LangGraph StateGraph · bounded critic loop"]
             direction LR
             PL["Planner\n3–6 sub-questions"]
             RS["Researcher\nweb + RAG tools"]
@@ -61,15 +60,19 @@ flowchart TD
         API --> PL
     end
 
-    DB[("PostgreSQL + pgvector\ncheckpoints · evidence · reports")]
-    WEB["Tavily\nWeb Search"]
-    LS["LangSmith\nTraces  (optional)"]
+    subgraph datalayer["Data Layer"]
+        direction LR
+        DB[("PostgreSQL\n+ pgvector")]
+        WEB["Tavily\nWeb Search"]
+        LS["LangSmith\n(optional)"]
+    end
 
-    UI <-->|"POST /research\nGET /research/{id}/stream  SSE"| API
-    RS -->|"vector similarity search"| DB
+    UI <-->|"POST /research · GET /stream SSE"| API
+    RS -->|"RAG similarity search"| DB
     RS -->|"live web search"| WEB
-    backend -->|"persist state"| DB
-    backend -. "if LANGSMITH_API_KEY set" .-> LS
+    API -. "checkpoints" .-> DB
+    CV -- "reports & evidence" --> DB
+    backend -. "traces" .-> LS
 ```
 
 **Five agents, one graph:**
