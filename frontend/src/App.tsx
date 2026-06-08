@@ -5,15 +5,8 @@ import { QuestionForm } from "./components/QuestionForm";
 import { ResearchPanel } from "./components/ResearchPanel";
 import { RunHistory } from "./components/RunHistory";
 
-// Layout: header + (sidebar | main).
-// - Sidebar (plan 5.7): recent-runs list, polled every 3 s, click selects a session.
-// - Main panel: question form + doc upload up top, and a placeholder for the selected
-//   session. Group B replaces the placeholder with the SSE timeline + Markdown report +
-//   side-panel evidence inspector.
 export default function App() {
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
-  // Bumped on every new submit so the sidebar reloads immediately rather than waiting
-  // for the next poll tick.
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   function handleSubmitted(id: number) {
@@ -23,32 +16,52 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <h1 className="text-lg font-semibold text-slate-900">
-            Autonomous Research Analyst
-          </h1>
+      {/* ── Header ── */}
+      <header className="flex-none border-b border-slate-800 bg-slate-900">
+        <div className="mx-auto flex max-w-screen-xl items-center justify-between px-6 py-3.5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm">
+              {/* research / document icon */}
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path d="M9 4.804A7.968 7.968 0 0 0 5.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 0 1 5.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0 1 14.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0 0 14.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 1 1-2 0V4.804z" />
+              </svg>
+            </div>
+            <div>
+              <h1 className="text-sm font-semibold text-white">
+                Autonomous Research Analyst
+              </h1>
+              <p className="text-[11px] text-slate-400">
+                Multi-agent · RAG · Cited reports
+              </p>
+            </div>
+          </div>
           <HealthBadge />
         </div>
       </header>
 
-      <div className="mx-auto grid w-full max-w-6xl flex-1 grid-cols-[18rem_1fr] gap-0 overflow-hidden">
+      {/* ── Body: sidebar + main ── */}
+      <div className="mx-auto flex w-full max-w-screen-xl flex-1 overflow-hidden">
         <RunHistory
           selectedSessionId={selectedSessionId}
           onSelect={setSelectedSessionId}
           refreshKey={historyRefreshKey}
         />
 
-        <main className="space-y-6 overflow-y-auto p-6">
-          <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-            <QuestionForm onSubmitted={handleSubmitted} />
-          </section>
+        <main className="flex-1 overflow-y-auto scrollbar-thin">
+          <div className="space-y-5 p-6">
+            {/* Question form card */}
+            <div className="rounded-xl bg-white px-6 py-5 shadow-sm ring-1 ring-slate-200">
+              <QuestionForm onSubmitted={handleSubmitted} />
+            </div>
 
-          <DocumentUploadForm />
+            {/* Document upload (collapsible) */}
+            <DocumentUploadForm />
 
-          {selectedSessionId !== null && (
-            <ResearchPanel sessionId={selectedSessionId} />
-          )}
+            {/* Research panel — mounted once a session is selected */}
+            {selectedSessionId !== null && (
+              <ResearchPanel sessionId={selectedSessionId} />
+            )}
+          </div>
         </main>
       </div>
     </div>

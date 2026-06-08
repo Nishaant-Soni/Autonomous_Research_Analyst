@@ -1,181 +1,251 @@
 # Autonomous Research Analyst
 
-A multi-agent system that takes a research question, plans an investigation, gathers
-evidence from the web and a private document corpus, critiques and fact-checks its own
-findings, and produces a fully cited report.
+A production-grade multi-agent system that accepts a research question, plans an investigation, gathers evidence from the live web and a private document corpus, critiques and fact-checks its own findings, and delivers a fully cited Markdown report — all in a single API call.
 
-See [`PRD.md`](./PRD.md) for the product spec.
+**Stack:** LangGraph · FastAPI · PostgreSQL + pgvector · OpenAI (`gpt-5.4-mini`) · Tavily · React + Vite + TypeScript + Tailwind · LangSmith · Ragas · Docker Compose
 
-## Status
+---
 
-Built so far:
+## Measured results
 
-- **Foundation** — FastAPI service + Postgres (pgvector), one-command bring-up, local embedding model baked into the image.
-- **Retrieval layer** — document ingestion (chunk + embed + store), pgvector similarity search (RAG), and Tavily web search. Both retrievers return structured `Evidence`.
-- **Agent-graph foundation** — the shared `ResearchState` contract and `Critique` model (`app/graph/state.py`), with a deduplicating reducer so evidence accumulates across the critic loop without the same source landing twice.
-- **All five agent nodes** — Planner (`app/agents/planner.py`, decomposes a question into 3–6 sub-questions), Researcher (`app/agents/researcher.py`, a tool-using loop over `web_search` + `rag_retrieve` that gathers `Evidence` and drafts findings), Critic (`app/agents/critic.py`, LLM-as-judge emitting a groundedness score + `needs_more_research`), Writer (`app/agents/writer.py`, synthesizes a structured report citing evidence by `[ev:i]`), and Citation validator (`app/agents/citation_validator.py`, pure code that drops unsupported claims, then assigns the final `[1..k]` numbering + sources list).
-- **The research graph (Phase 2 complete)** — `app/graph/build.py` wires the five nodes into a LangGraph `StateGraph` with a bounded critic loop (`max_iterations`) and Postgres checkpointing. `python -m scripts.run_once "<question>"` runs the whole pipeline end-to-end and prints a cited Markdown report.
-- **Async research API (Phase 3 complete)** — `POST /research` creates a session and kicks off the graph run as a background task, returning a `session_id` immediately. A shared runner (`app/graph/runner.py`) drives the session status through `planning → researching → critiquing → writing → validating → done | failed`, persists the report and the citation validator's low-confidence signal, and pushes per-agent progress onto an in-process queue (`app/api/progress.py`). `GET /research/{id}` polls status (and returns the report once done), `GET /research/{id}/evidence` inspects the gathered evidence, and `GET /research/{id}/stream` streams per-agent progress over SSE (status names the currently-running stage, via LangGraph node-start events). `run_once` now shares this runner.
-- **Reliability + observability (Phase 3 complete)** — every LLM call has a per-call timeout + automatic retries, and each agent has a token budget (PRD §12); a failed agent fails the session cleanly (`failed` + `error`) rather than hanging. The API startup sweeps any rows left non-terminal by a previous process death (deploy / OOM / dev rebuild) and marks them `failed` with `error="abandoned at startup"` — see `app/db/init_db.py:mark_abandoned_sessions`. With a `LANGSMITH_API_KEY` set, runs are traced in LangSmith with per-agent node spans plus per-call token usage and latency (`app/observability.py`).
-- **Eval dataset + run harness (Phase 4 Group A complete)** — `eval/golden.jsonl` holds 16 schema-validated research questions (10 web + 6 corpus), each with reference key facts used as Ragas ground truth. Corpus items are backed by a committed, self-authored seed corpus (`eval/corpus/*.md`) and the loader enforces that every corpus fact is verbatim-supported by its source doc. `python -m eval.run` ingests the corpus idempotently, runs the full graph per item, persists per-question artifacts (`report.md` / `evidence.jsonl` / `result.json`) to `eval/runs/<run-id>/<item.id>/`, and runs a deterministic retrievability check confirming every corpus fact is actually surfaced by the production embedder + retriever. Run/score/report separation — metrics in Group B read these cached artifacts and never re-run the pipeline.
-- **Eval Score + Report stages (Phase 4 Group B complete)** — `python -m eval.score` reads cached artifacts and writes `scores.json` with all six PRD §10 metric families: deterministic citation accuracy + Ragas-judged faithfulness, answer relevancy, context recall, the derived `hallucination_rate = 1 − faithfulness`, wall-clock latency, and per-item cost in USD (sourced from LangSmith token usage × a pinned `gpt-5.4-mini` price table). `python -m eval.report` then renders a small, **committed** Markdown report at `eval/results/<run-id>.md` so iterations are comparable. Graceful degrades on a missing LangSmith key (cost block omitted, never crashes) and `--skip-ragas` keeps the deterministic-only path available.
-- **Frontend scaffold + question submit + file uploads + recent-runs sidebar (Phase 5 Group A complete)** — `frontend/`: Vite + React 18 + TypeScript + Tailwind. The React app posts a question to `POST /research` and shows the returned `session_id`. An optional collapsible section accepts **real file uploads** (`.txt`, `.md`, `.pdf` — PDFs parsed server-side via `pypdf`) sent as multipart to `POST /documents/upload`; the existing JSON `POST /documents` path stays for programmatic use. A **recent-runs sidebar** polls `GET /research?limit=20` every 3 s and lets a reviewer flip between past questions. CORS is regex-scoped to localhost on any port. `docker-compose up` brings db + api + frontend up together (the frontend service runs Vite's dev server on `5173`). The live progress / report / evidence inspector arrive in Group B.
-- **Critic-loop A/B + gate tuning (Phase 4 C2 complete)** — `python -m eval.compare` diffs two scored runs; we ran three arms over the 16-item golden set. The first A/B (`eval/results/critic_loop_AB.md`) showed the original `needs_more_research` gate was over-eager: ON 5.5% hallucination vs OFF 4.8%, at **2× latency and 2× cost**. Per-item picture was a 7-help / 7-hurt / 2-tied wash, with no clean "question-type" split — the gate fired too liberally across the board. We then **tightened the routing** to `groundedness < 0.70 AND len(gaps) ≥ 2` and re-ran: **hallucination measured at 4.1% (a 1.4pp drop vs original, ~25% relative)** at cost within 22% of OFF. The tightened gate fires on 3 of 16 items and stays essentially identical to OFF on the rest. At n=16 the delta is at the edge of significance (run-to-run noise ≈ ±1–2pp); what's robust is the *direction* (tightened ≥ OFF ≥ original on quality, tightened ≈ OFF on cost). The full 3-way verdict is committed at `eval/results/critic_three_way.md`.
+Evaluated against a [16-item golden dataset](eval/golden.jsonl) covering RAG, LLM inference, and retrieval engineering. All numbers are for the **tightened critic gate** (production config):
 
-Not yet built: Phase 5 Group B (SSE-driven progress timeline + Markdown report + side-panel evidence inspector) and Group C (README rewrite leading with eval numbers + Mermaid architecture diagram).
+| Metric | Score |
+|---|---|
+| **Citation accuracy** | **100%** |
+| **Faithfulness** | **95.9%** |
+| **Answer relevancy** | **90.2%** |
+| **Context recall** | **96.9%** |
+| **Hallucination rate** (1 − faithfulness) | **4.1%** |
+| Latency / item | 46.5 s |
+| Cost / item | $0.017 |
+
+### Critic-loop A/B
+
+The critic loop was tuned across three arms. The key finding: the original `needs_more_research` gate was over-eager — it fired on every item and produced a net-wash 7-help / 7-hurt picture at 2× cost. Tightening to **two independent signals** (low groundedness *and* multiple named gaps) cut hallucination by ~25% at near-OFF cost:
+
+| Arm | Hallucination rate | Latency / item | Cost / item |
+|---|---|---|---|
+| Original gate (`needs_more_research`) | 5.5% | 77.6 s | $0.028 |
+| Gate OFF (no loop-back) | 4.8% | 40.6 s | $0.014 |
+| **Tightened** (`groundedness < 0.70 AND gaps ≥ 2`) | **4.1%** | 46.5 s | $0.017 |
+
+The tightened gate fires on exactly 3 of 16 items — precisely where a second research pass is worth paying for. Full 3-way breakdown: [`eval/results/critic_three_way.md`](eval/results/critic_three_way.md)
+
+> **Caveat (n=16).** Run-to-run noise floor on aggregate hallucination is ≈ ±1–2 pp at this dataset size. The direction (tightened ≤ original on hallucination, tightened ≈ OFF on cost) is robust; the magnitude would tighten with a larger eval set.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TD
+    UI["React UI\nVite · TypeScript · Tailwind"]
+
+    subgraph backend["FastAPI Backend · Python 3.11"]
+        API["REST + SSE Endpoints"]
+
+        subgraph graph["LangGraph StateGraph  (bounded critic loop)"]
+            direction LR
+            PL["Planner\n3–6 sub-questions"]
+            RS["Researcher\nweb + RAG tools"]
+            CR["Critic\ngroundedness judge"]
+            WR["Writer\ncited Markdown"]
+            CV["Citation Validator\ndrop · renumber"]
+
+            PL --> RS --> CR
+            CR -->|"groundedness < 0.70\nAND gaps ≥ 2"| RS
+            CR --> WR --> CV
+        end
+
+        API --> PL
+    end
+
+    DB[("PostgreSQL + pgvector\ncheckpoints · evidence · reports")]
+    WEB["Tavily\nWeb Search"]
+    LS["LangSmith\nTraces  (optional)"]
+
+    UI <-->|"POST /research\nGET /research/{id}/stream  SSE"| API
+    RS -->|"vector similarity search"| DB
+    RS -->|"live web search"| WEB
+    backend -->|"persist state"| DB
+    backend -. "if LANGSMITH_API_KEY set" .-> LS
+```
+
+**Five agents, one graph:**
+
+| Agent | Role |
+|---|---|
+| **Planner** | Decomposes the question into 3–6 targeted sub-questions |
+| **Researcher** | Tool-using loop over `web_search` + `rag_retrieve`; returns structured `Evidence` |
+| **Critic** | LLM-as-judge emitting a groundedness score + coverage gaps |
+| **Writer** | Synthesizes a Markdown report citing evidence by `[ev:i]` markers |
+| **Citation Validator** | Drops unsupported claims, assigns final `[1..k]` numbering + sources list |
+
+---
+
+## Quick start
+
+Requires Docker and a `.env` file with your keys (copy from `.env.example`):
+
+```bash
+cp .env.example .env          # add OPENAI_API_KEY and TAVILY_API_KEY
+docker compose up --build
+```
+
+That's it. Three services start:
+
+| Service | URL | Purpose |
+|---|---|---|
+| **React UI** | http://localhost:5173 | Submit questions, stream progress, read cited reports |
+| **API** | http://localhost:8000 | FastAPI backend (Swagger at `/docs`) |
+| **DB** | localhost:5432 | PostgreSQL + pgvector (schema applied on first boot) |
+
+The API image has the embedding model (`BAAI/bge-small-en-v1.5`, 384-dim) baked in — no download on first run. The frontend container installs `node_modules` into a named volume on first boot (~30 s one-time cost).
+
+```bash
+# Ingest a reference document (the UI has a file picker too)
+curl -X POST localhost:8000/documents/upload -F "file=@notes.pdf"
+
+# Submit a question directly and get the session ID
+curl -s -X POST localhost:8000/research \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What are the trade-offs between RAG and fine-tuning?"}' \
+  | jq .
+```
+
+---
+
+## What's built
+
+| Phase | Status | Summary |
+|---|---|---|
+| **Foundation** | ✅ | FastAPI + PostgreSQL/pgvector, one-command Docker bring-up, baked embedding model |
+| **Retrieval** | ✅ | Document ingestion (chunk + embed + store), pgvector similarity search, Tavily web search |
+| **Agent graph** | ✅ | `ResearchState` contract, 5 agent nodes, LangGraph `StateGraph` with bounded critic loop + Postgres checkpointing |
+| **Async API** | ✅ | `POST /research` fires background run; SSE streams per-agent progress; full status lifecycle; LangSmith tracing |
+| **Reliability** | ✅ | Per-call timeouts + retries, token budgets, clean failure path, startup zombie sweep for in-flight sessions |
+| **Eval harness** | ✅ | 16-item golden dataset, self-authored seed corpus, run/score/report pipeline; Ragas faithfulness + answer relevancy + context recall; LangSmith cost tracking |
+| **Critic tuning** | ✅ | 3-arm A/B; tightened gate cuts hallucination 5.5% → 4.1% at near-OFF cost |
+| **React UI** | ✅ | SSE-driven progress timeline, Markdown report, evidence inspector with citation-click-to-scroll, recent-runs sidebar |
+
+---
 
 ## HTTP endpoints
 
 | Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/health` | Liveness check |
-| POST | `/documents` | Ingest a document (JSON `raw_text`): chunk + embed + store |
-| POST | `/documents/upload` | Ingest a file upload (`.txt`/`.md`/`.pdf`, ≤5MB): chunk + embed + store |
-| POST | `/research` | Start an async research run; returns a `session_id` immediately (202) |
-| GET | `/research?limit=N` | List recent runs (slim summaries) — drives the React sidebar |
-| GET | `/research/{id}` | Poll run status; once `done`, returns the report + `citations_valid` (+ `low_confidence`) |
-| GET | `/research/{id}/evidence` | Inspect the structured evidence gathered for the session |
-| GET | `/research/{id}/stream` | SSE stream of per-agent progress while the run executes |
+|---|---|---|
+| `GET` | `/health` | Liveness check |
+| `POST` | `/documents` | Ingest raw text (JSON body) — chunk + embed + store |
+| `POST` | `/documents/upload` | Ingest a file (`.txt` / `.md` / `.pdf`, ≤ 5 MB) |
+| `POST` | `/research` | Start an async run; returns `session_id` immediately (202) |
+| `GET` | `/research?limit=N` | List recent runs — drives the sidebar |
+| `GET` | `/research/{id}` | Poll status; returns report + `citations_valid` + `low_confidence` once done |
+| `GET` | `/research/{id}/evidence` | Structured evidence for a session |
+| `GET` | `/research/{id}/stream` | SSE stream of per-agent progress |
 
-Interactive API docs render at `http://localhost:8000/docs`.
-
-## Quickstart (Docker)
-
-Brings up the API + Postgres (with pgvector) + the React UI. The DB schema is applied
-automatically on first start (fresh volume); the API image has the embedding model baked
-in, so there's no download on first run. The frontend container runs Vite's dev server
-and installs its `node_modules` into a named volume on first boot (~30s one-time cost).
-
-```bash
-docker-compose up --build
-
-# Open the UI
-open http://localhost:5173                  # React app (Vite dev)
-# API also available directly:
-curl localhost:8000/health                  # -> {"status":"ok"}
-open http://localhost:8000/docs             # OpenAPI / Swagger
-
-# Ingest a file via the upload endpoint (the UI uses this path)
-curl -X POST localhost:8000/documents/upload -F "file=@path/to/notes.pdf"
-# -> {"document_id": 1, "chunks": N}
-
-# Or ingest raw text via the JSON endpoint (handy for scripts / CI)
-curl -X POST localhost:8000/documents \
-  -H "Content-Type: application/json" \
-  -d '{"raw_text": "Paris is the capital of France.", "title": "geo"}'
-# -> {"document_id": 2, "chunks": 1}
-```
+---
 
 ## Local development
 
-Requires a running Postgres with pgvector. The easiest path is to run just the DB in
-Docker, the backend on the host with `--reload`, and the frontend on the host with
-`npm run dev` (also hot-reload):
+Run the DB in Docker, the backend and frontend on the host for hot-reload:
 
 ```bash
-# --- backend ---
+# ── Backend ──────────────────────────────────────────────────────────────────
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env                  # fill in keys (OpenAI/Tavily); embeddings need none
+cp .env.example .env                    # fill in OPENAI_API_KEY + TAVILY_API_KEY
 
-docker compose up -d db               # Postgres + pgvector on localhost:5432
-uvicorn app.main:app --reload         # http://localhost:8000/docs
+docker compose up -d db                 # Postgres + pgvector on localhost:5432
+uvicorn app.main:app --reload           # http://localhost:8000
 
-# --- frontend (separate shell) ---
+# ── Frontend (separate shell) ─────────────────────────────────────────────────
 cd frontend
-npm install                           # one-time
-npm run dev                           # http://localhost:5173
+npm install
+npm run dev                             # http://localhost:5173
 ```
 
-The frontend talks to the API at `VITE_API_URL` (default `http://localhost:8000`).
-CORS in `app/main.py` already allows the Vite dev origin (`http://localhost:5173`). If
-you change the API port, set `VITE_API_URL` in `frontend/.env.local`.
+`VITE_API_URL` defaults to `http://localhost:8000`. Override in `frontend/.env.local` if your API port differs.
 
-The first embedding call downloads the model (`BAAI/bge-small-en-v1.5`, 384-dim) into
-the local Hugging Face cache.
+---
 
-## Run the research pipeline (end-to-end)
-
-With Postgres up and `OPENAI_API_KEY` + `TAVILY_API_KEY` set in `.env`, run the full
-multi-agent graph over a question and get a cited Markdown report:
+## Eval harness
 
 ```bash
 docker compose up -d db
-python -m scripts.run_once "What are the main benefits of on-device LLM inference?"
+pip install -e ".[eval]"                 # Ragas + LangChain judge stack (pinned)
+
+# Full pipeline over all 16 golden items (~30–60 min, costs LLM tokens)
+python -m eval.run
+
+# Cheaper alternatives
+python -m eval.run --only-retrievability  # corpus check only, no LLM calls
+python -m eval.run --limit 2              # smoke: first 2 items only
+
+# Score and render
+python -m eval.score                      # all six metric families
+python -m eval.score --skip-ragas         # deterministic only (no judge cost)
+python -m eval.report                     # writes eval/results/<run-id>.md
+
+# A/B compare two scored runs
+python -m eval.compare \
+  --a <run-id-a> --b <run-id-b> \
+  --name my_experiment \
+  --label-a "Variant A" --label-b "Variant B"
 ```
 
-It creates a `research_sessions` row, runs Planner → Researcher → Critic (bounded loop) →
-Writer → Citation validator (checkpointing to Postgres), persists the `evidence` and
-`reports` rows, and prints the report with inline `[n]` citations and a sources list.
+Artifacts land in `eval/runs/<run-id>/` (gitignored). Per item: `report.md`, `evidence.jsonl`, `result.json`. Run-level: `scores.json`, `meta.json`, `retrievability.json`.
 
-## Run the eval harness (Phase 4 Group A)
-
-```bash
-docker compose up -d db
-python -m scripts.run_once "hi"        # one-time: bootstraps the DB schema (any question)
-python -m eval.run --only-retrievability   # cheap: confirms every corpus key_fact is surfaced
-python -m eval.run --limit 2               # smoke: runs the graph over the first 2 items
-python -m eval.run                         # full: all 16 items (costs LLM tokens; ~30-60 min)
-
-pip install -e ".[eval]"                   # one-time: Ragas + langchain-openai for the judge
-python -m eval.score                       # score the latest run dir (all six metric families)
-python -m eval.score --skip-ragas          # deterministic only (no judge-LLM cost)
-python -m eval.report                      # render eval/results/<run-id>.md (committed)
-
-# A/B compare two scored runs (e.g. the critic-loop ON/OFF A/B in C2)
-python -m eval.compare --a <id_a> --b <id_b> --name critic_loop_AB \
-    --label-a "Critic loop ON" --label-b "Critic loop OFF"
-```
-
-Artifacts land under `eval/runs/<run-id>/` (gitignored). Per item: `report.md`,
-`evidence.jsonl`, `result.json`. Run-level: `meta.json`, `summary.json`,
-`retrievability.json`, `scores.json` (after `eval.score`). Failures are isolated per-item
-(`error.txt`) so one bad item doesn't sink the run.
+---
 
 ## Tests
 
 ```bash
-# Fast unit tests (DB- and model-dependent tests are skipped)
+# Fast unit tests — no external dependencies required
 pytest -q
 
-# Full suite, including DB ingestion/retrieval, the real embedding model, live web,
-# and a live LLM call. Needs Postgres running; the schema is created by the fixtures.
+# Full suite (needs Postgres running)
 docker compose up -d db
 RUN_DB_TESTS=1 RUN_MODEL_TESTS=1 RUN_WEB_TESTS=1 RUN_LLM_TESTS=1 pytest -q
 ```
 
-- `RUN_DB_TESTS=1` enables tests that need Postgres (`DATABASE_URL` must point at it).
-- `RUN_MODEL_TESTS=1` enables tests that load the real embedding model.
-- `RUN_WEB_TESTS=1` enables the live Tavily web-search test (needs a real `TAVILY_API_KEY`).
-- `RUN_LLM_TESTS=1` enables the live LLM test (Planner) — needs a real `OPENAI_API_KEY`.
+| Flag | What it enables |
+|---|---|
+| `RUN_DB_TESTS=1` | Tests requiring a live Postgres instance |
+| `RUN_MODEL_TESTS=1` | Tests loading the real embedding model |
+| `RUN_WEB_TESTS=1` | Live Tavily web-search test (needs `TAVILY_API_KEY`) |
+| `RUN_LLM_TESTS=1` | Live LLM call via Planner (needs `OPENAI_API_KEY`) |
 
-The frontend has no Jest/Vitest suite in Group A (straight HTML/CSS plumbing — easier
-to catch visually). TypeScript itself is the gate:
+Frontend type-check:
 
 ```bash
-cd frontend && npm run typecheck       # tsc -b --noEmit, must be clean
+cd frontend && npm run typecheck     # tsc -b --noEmit, must be clean
 ```
+
+---
 
 ## Lint / format
 
 ```bash
-ruff check .          # lint (backend)
-ruff format .         # apply formatting (CI runs `ruff format --check .`)
+ruff check .          # lint (CI gate)
+ruff format .         # apply formatting
 ```
+
+---
 
 ## Configuration
 
-All settings come from environment variables / `.env` (see [`.env.example`](./.env.example)):
+All settings from environment variables / `.env` (see [`.env.example`](./.env.example)):
 
-| Variable | Purpose |
-|----------|---------|
-| `DATABASE_URL` | Postgres connection string |
-| `OPENAI_API_KEY` | LLM agents (Planner / Researcher / Critic / Writer) |
-| `TAVILY_API_KEY` | Web search (Tavily) — the `web_search` retriever and live web test |
-| `LANGSMITH_API_KEY` | Optional — set to enable LangSmith tracing (per-agent spans, token usage, latency) |
-| `LANGSMITH_PROJECT` | LangSmith project name (default `autonomous-research-analyst`) |
-| `LLM_TIMEOUT_SECONDS` | Per-call LLM timeout, a hang ceiling (default `120`) |
-| `LLM_MAX_RETRIES` | LLM retries for transient errors (default `2`) |
-| `EMBEDDING_MODEL` | Local embedding model (default `BAAI/bge-small-en-v1.5`) |
-| `MAX_ITERATIONS` | Hard cap on the critic loop (default `2`) |
-| `VITE_API_URL` (frontend) | API base URL the React app calls (default `http://localhost:8000`) — set in `frontend/.env.local` for host dev, or in `docker-compose.yml` for the compose frontend service |
+| Variable | Default | Purpose |
+|---|---|---|
+| `DATABASE_URL` | — | Postgres connection string |
+| `OPENAI_API_KEY` | — | LLM agents + Ragas judge |
+| `TAVILY_API_KEY` | — | Web search (Researcher node + live test) |
+| `LANGSMITH_API_KEY` | *(optional)* | Enable LangSmith tracing |
+| `LANGSMITH_PROJECT` | `autonomous-research-analyst` | LangSmith project name |
+| `LLM_TIMEOUT_SECONDS` | `120` | Per-call LLM hang ceiling |
+| `LLM_MAX_RETRIES` | `2` | LLM retries on transient errors |
+| `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Local sentence-transformer (384-dim) |
+| `MAX_ITERATIONS` | `2` | Hard cap on the critic loop-back |
+| `VITE_API_URL` | `http://localhost:8000` | API base URL for the React app |

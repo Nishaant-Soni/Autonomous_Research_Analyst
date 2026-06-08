@@ -7,35 +7,35 @@ const POLL_MS = 3000;
 interface Props {
   selectedSessionId: number | null;
   onSelect: (id: number) => void;
-  // Bumping this counter from the parent (e.g. on a new submit) forces an immediate
-  // refresh so newly-started runs show up without waiting for the next 3-second tick.
   refreshKey: number;
 }
 
 type Phase = "loading" | "ready" | "error";
 
 const STATUS_STYLES: Record<string, string> = {
-  done: "bg-emerald-100 text-emerald-700",
-  failed: "bg-rose-100 text-rose-700",
-  planning: "bg-sky-100 text-sky-700",
-  researching: "bg-sky-100 text-sky-700",
-  critiquing: "bg-violet-100 text-violet-700",
-  writing: "bg-amber-100 text-amber-700",
-  validating: "bg-amber-100 text-amber-700",
+  done:        "bg-emerald-100 text-emerald-700",
+  failed:      "bg-rose-100 text-rose-700",
+  planning:    "bg-indigo-100 text-indigo-700",
+  researching: "bg-indigo-100 text-indigo-700",
+  critiquing:  "bg-violet-100 text-violet-700",
+  writing:     "bg-amber-100 text-amber-700",
+  validating:  "bg-amber-100 text-amber-700",
 };
 
-function statusPill(status: string) {
-  const cls = STATUS_STYLES[status] ?? "bg-slate-100 text-slate-700";
+const IN_PROGRESS = new Set(["planning", "researching", "critiquing", "writing", "validating"]);
+
+function StatusPill({ status }: { status: string }) {
+  const cls = STATUS_STYLES[status] ?? "bg-slate-100 text-slate-600";
   return (
-    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${cls}`}>
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cls}`}>
+      {IN_PROGRESS.has(status) && (
+        <span className="h-1 w-1 animate-pulse rounded-full bg-current" />
+      )}
       {status}
     </span>
   );
 }
 
-// Plan 5.7 (Group B prep): recent-runs sidebar. Polls `GET /research?limit=20` every 3s
-// and lets the user click between past runs. The detail panel reading `selectedSessionId`
-// arrives with the rest of Group B (SSE timeline + report + evidence).
 export function RunHistory({ selectedSessionId, onSelect, refreshKey }: Props) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [runs, setRuns] = useState<ResearchSummary[]>([]);
@@ -73,26 +73,35 @@ export function RunHistory({ selectedSessionId, onSelect, refreshKey }: Props) {
   }, [refreshKey]);
 
   return (
-    <aside className="flex h-full flex-col border-r border-slate-200 bg-white">
-      <div className="border-b border-slate-200 px-4 py-3">
-        <h2 className="text-sm font-semibold text-slate-900">Recent runs</h2>
-        <p className="text-xs text-slate-500">Auto-refreshes every 3 s</p>
+    <aside className="flex w-64 flex-none flex-col border-r border-slate-200 bg-white">
+      {/* Sidebar header */}
+      <div className="border-b border-slate-100 px-4 py-3.5">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Recent runs
+        </h2>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto scrollbar-thin">
         {phase === "loading" && (
-          <p className="px-4 py-3 text-sm text-slate-500">Loading…</p>
+          <div className="flex items-center gap-2 px-4 py-4 text-xs text-slate-400">
+            <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Loading…
+          </div>
         )}
         {phase === "error" && (
-          <p className="px-4 py-3 text-sm text-rose-700">{error}</p>
+          <p className="px-4 py-3 text-xs text-rose-600">{error}</p>
         )}
         {phase === "ready" && runs.length === 0 && (
-          <p className="px-4 py-6 text-sm text-slate-500">
-            No runs yet. Submit a question to get started.
-          </p>
+          <div className="px-4 py-8 text-center">
+            <p className="text-xs text-slate-400">No runs yet.</p>
+            <p className="mt-1 text-xs text-slate-400">Submit a question to get started.</p>
+          </div>
         )}
         {phase === "ready" && runs.length > 0 && (
-          <ul className="divide-y divide-slate-100">
+          <ul className="py-1">
             {runs.map((r) => {
               const selected = r.session_id === selectedSessionId;
               return (
@@ -100,28 +109,48 @@ export function RunHistory({ selectedSessionId, onSelect, refreshKey }: Props) {
                   <button
                     type="button"
                     onClick={() => onSelect(r.session_id)}
-                    className={`w-full px-4 py-3 text-left transition hover:bg-slate-50 ${
-                      selected ? "bg-slate-100" : ""
+                    className={`group relative w-full px-4 py-3 text-left transition-colors ${
+                      selected
+                        ? "bg-indigo-50"
+                        : "hover:bg-slate-50"
                     }`}
                   >
+                    {/* Active indicator bar */}
+                    {selected && (
+                      <span className="absolute inset-y-0 left-0 w-0.5 rounded-r-full bg-indigo-500" />
+                    )}
+
                     <div className="flex items-start justify-between gap-2">
-                      <p className="line-clamp-2 text-sm text-slate-900">{r.question}</p>
-                      {statusPill(r.status)}
+                      <p className={`line-clamp-2 text-xs leading-relaxed ${selected ? "font-medium text-indigo-900" : "text-slate-700"}`}>
+                        {r.question}
+                      </p>
+                      <StatusPill status={r.status} />
                     </div>
-                    <p className="mt-1 text-xs text-slate-500">
-                      #{r.session_id} · {relativeTime(r.created_at)}
+
+                    <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-slate-400">
+                      <span>#{r.session_id}</span>
+                      <span>·</span>
+                      <span>{relativeTime(r.created_at)}</span>
                       {r.low_confidence && (
-                        <span className="ml-1.5 rounded bg-amber-50 px-1 py-px text-[10px] font-medium text-amber-700">
-                          low confidence
-                        </span>
+                        <>
+                          <span>·</span>
+                          <span className="rounded bg-amber-50 px-1 py-px font-medium text-amber-600">
+                            low confidence
+                          </span>
+                        </>
                       )}
-                    </p>
+                    </div>
                   </button>
                 </li>
               );
             })}
           </ul>
         )}
+      </div>
+
+      {/* Footer */}
+      <div className="border-t border-slate-100 px-4 py-2.5">
+        <p className="text-[10px] text-slate-400">Auto-refreshes every 3 s</p>
       </div>
     </aside>
   );

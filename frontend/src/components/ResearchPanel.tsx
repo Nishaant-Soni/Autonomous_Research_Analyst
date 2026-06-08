@@ -67,7 +67,7 @@ function transformCitations(
             key={i}
             type="button"
             onClick={() => onClick(n)}
-            className="mx-0.5 inline-flex rounded bg-slate-100 px-1 py-0.5 font-mono text-[11px] font-medium text-slate-700 transition-colors hover:bg-amber-100 hover:text-amber-800"
+            className="mx-0.5 inline-flex rounded bg-indigo-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-indigo-600 transition-colors hover:bg-indigo-100 hover:text-indigo-800"
           >
             {part}
           </button>
@@ -84,34 +84,41 @@ function ProgressTimeline({ status }: { status: string }) {
   const currentIdx = STAGES.findIndex((s) => s.key === status);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-6 py-4 shadow-sm">
+    <div className="rounded-xl bg-white px-6 py-4 shadow-sm ring-1 ring-slate-200">
       <div className="flex items-start">
         {STAGES.map((stage, i) => {
           const done = i < currentIdx;
           const active = i === currentIdx;
           return (
             <React.Fragment key={stage.key}>
-              <div className="flex flex-col items-center gap-1">
-                <div
-                  className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold ${
-                    done
-                      ? "bg-emerald-500 text-white"
-                      : active
-                        ? "bg-slate-900 text-white"
-                        : "bg-slate-100 text-slate-400"
-                  }`}
-                >
-                  {done ? "✓" : i + 1}
+              <div className="flex flex-col items-center gap-1.5">
+                <div className="relative">
+                  {active && (
+                    <span className="absolute inset-0 animate-ping rounded-full bg-indigo-400 opacity-50" />
+                  )}
+                  <div
+                    className={`relative flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold ${
+                      done
+                        ? "bg-emerald-500 text-white"
+                        : active
+                          ? "bg-indigo-600 text-white"
+                          : "bg-slate-100 text-slate-400"
+                    }`}
+                  >
+                    {done ? "✓" : i + 1}
+                  </div>
                 </div>
                 <span
-                  className={`text-[10px] font-medium ${active ? "text-slate-900" : "text-slate-400"}`}
+                  className={`text-[10px] font-medium ${
+                    active ? "text-indigo-700" : done ? "text-slate-500" : "text-slate-400"
+                  }`}
                 >
                   {stage.label}
                 </span>
               </div>
               {i < STAGES.length - 1 && (
                 <div
-                  className={`mx-1 mt-3 h-px flex-1 ${done ? "bg-emerald-300" : "bg-slate-200"}`}
+                  className={`mx-1 mt-3.5 h-px flex-1 transition-colors ${done ? "bg-emerald-300" : "bg-slate-200"}`}
                 />
               )}
             </React.Fragment>
@@ -132,40 +139,46 @@ interface EvidencePanelProps {
 
 function EvidencePanel({ evidence, highlightN, itemRefs }: EvidencePanelProps) {
   return (
-    <div className="flex flex-col rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 px-4 py-3">
-        <h2 className="text-sm font-semibold text-slate-900">Evidence</h2>
-        <p className="text-xs text-slate-400">Click [n] in the report to jump</p>
+    <div className="flex flex-col rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+      <div className="border-b border-slate-100 px-4 py-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Sources
+        </h2>
+        <p className="mt-0.5 text-[10px] text-slate-400">Click [n] in the report to highlight</p>
       </div>
-      <div className="flex-1 overflow-y-auto divide-y divide-slate-100" style={{ maxHeight: "60vh" }}>
+      <div className="flex-1 overflow-y-auto scrollbar-thin divide-y divide-slate-50" style={{ maxHeight: "60vh" }}>
         {evidence.length === 0 && (
-          <p className="px-4 py-3 text-xs text-slate-400">No evidence available.</p>
+          <p className="px-4 py-6 text-center text-xs text-slate-400">No sources available.</p>
         )}
         {evidence.map((ev, i) => (
           <div
             key={i}
-            ref={(el) => {
-              itemRefs.current[i] = el;
-            }}
-            className={`px-4 py-3 transition-colors duration-700 ${
-              highlightN === i + 1 ? "bg-amber-50" : ""
+            ref={(el) => { itemRefs.current[i] = el; }}
+            className={`px-4 py-3 transition-colors duration-500 ${
+              highlightN === i + 1 ? "bg-indigo-50" : "hover:bg-slate-50"
             }`}
           >
-            <div className="flex items-start gap-2">
-              <span className="mt-0.5 flex-none rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+            <div className="flex items-start gap-2.5">
+              <span className={`mt-0.5 flex-none rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                highlightN === i + 1
+                  ? "bg-indigo-100 text-indigo-600"
+                  : "bg-slate-100 text-slate-500"
+              }`}>
                 [{i + 1}]
               </span>
-              <div className="min-w-0 flex-1 space-y-1">
+              <div className="min-w-0 flex-1 space-y-1.5">
                 {ev.claim && (
-                  <p className="line-clamp-2 text-xs font-medium text-slate-700">{ev.claim}</p>
+                  <p className="line-clamp-2 text-xs font-medium leading-relaxed text-slate-700">
+                    {ev.claim}
+                  </p>
                 )}
-                <p className="line-clamp-3 text-xs text-slate-500">{ev.content}</p>
+                <p className="line-clamp-3 text-[11px] leading-relaxed text-slate-500">{ev.content}</p>
                 <div className="flex items-center gap-2 pt-0.5">
                   <span
-                    className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+                    className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${
                       ev.retriever === "web"
-                        ? "bg-sky-100 text-sky-700"
-                        : "bg-violet-100 text-violet-700"
+                        ? "bg-sky-100 text-sky-600"
+                        : "bg-violet-100 text-violet-600"
                     }`}
                   >
                     {ev.retriever}
@@ -175,7 +188,7 @@ function EvidencePanel({ evidence, highlightN, itemRefs }: EvidencePanelProps) {
                       href={ev.source_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="min-w-0 truncate text-[10px] text-slate-400 hover:text-slate-600 hover:underline"
+                      className="min-w-0 truncate text-[10px] text-slate-400 hover:text-indigo-600 hover:underline"
                     >
                       {ev.source_url}
                     </a>
@@ -289,52 +302,58 @@ export function ResearchPanel({ sessionId }: Props) {
 
       {/* Failed state */}
       {isFailed && (
-        <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          Run failed{streamError ? `: ${streamError}` : ""}
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3.5 text-sm text-rose-700">
+          <span className="font-semibold">Run failed</span>
+          {streamError ? ` — ${streamError}` : ""}
         </div>
       )}
 
       {/* Loading report after stream closes */}
       {isDone && reportLoading && (
-        <p className="text-sm text-slate-500">Loading report…</p>
+        <div className="flex items-center gap-2 text-sm text-slate-500">
+          <svg className="h-4 w-4 animate-spin text-indigo-500" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          Loading report…
+        </div>
       )}
 
       {/* 5.4 + 5.5 — Report + evidence side-panel */}
       {isDone && !reportLoading && reportMd && (
         <div className="grid grid-cols-[1fr_22rem] items-start gap-4">
           {/* Report (5.4) */}
-          <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-4 space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-semibold text-slate-900">Report</h2>
-                {citationsValid === true && (
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700">
-                    citations valid
-                  </span>
-                )}
-                {lowConfidence && (
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700">
-                    low confidence
-                  </span>
-                )}
-              </div>
+          <div className="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+            <div className="mb-5 flex flex-wrap items-center gap-2 border-b border-slate-100 pb-4">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Report
+              </h2>
+              {citationsValid === true && (
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                  ✓ citations valid
+                </span>
+              )}
+              {lowConfidence && (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                  ⚠ low confidence
+                </span>
+              )}
             </div>
 
-            {/* Markdown render with custom heading + list styles (no @tailwindcss/typography needed) */}
-            <div className="space-y-3 text-sm text-slate-800">
+            <div className="space-y-3 text-sm leading-relaxed text-slate-700">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
                   h1: ({ children }) => (
-                    <h1 className="mb-2 text-lg font-bold text-slate-900">{children}</h1>
+                    <h1 className="mb-3 mt-1 text-xl font-bold text-slate-900">{children}</h1>
                   ),
                   h2: ({ children }) => (
-                    <h2 className="mb-1.5 mt-4 text-base font-semibold text-slate-900">
+                    <h2 className="mb-2 mt-5 text-base font-semibold text-slate-900">
                       {children}
                     </h2>
                   ),
                   h3: ({ children }) => (
-                    <h3 className="mb-1 mt-3 text-sm font-semibold text-slate-800">{children}</h3>
+                    <h3 className="mb-1 mt-4 text-sm font-semibold text-slate-800">{children}</h3>
                   ),
                   p: ({ children }) => (
                     <p className="leading-relaxed">
