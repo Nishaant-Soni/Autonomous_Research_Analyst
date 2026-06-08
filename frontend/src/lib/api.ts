@@ -86,4 +86,36 @@ export async function postDocumentFile(file: File): Promise<DocumentResponse> {
   return (await res.json()) as DocumentResponse;
 }
 
+export interface ResearchDetail {
+  session_id: number;
+  status: string;
+  report_md: string | null;
+  citations_valid: boolean | null;
+  low_confidence: boolean | null;
+  faithfulness: number | null;
+  answer_relevancy: number | null;
+  hallucination_rate: number | null;
+  error: string | null;
+}
+
+export async function getResearch(sessionId: number): Promise<ResearchDetail> {
+  return request(`/research/${sessionId}`);
+}
+
+export interface EvidenceItem {
+  claim: string | null;
+  content: string | null;
+  source_url: string | null;
+  source_chunk_id: number | null;
+  retriever: string;
+}
+
+export async function getEvidence(sessionId: number): Promise<EvidenceItem[]> {
+  return request(`/research/${sessionId}/evidence`);
+}
+
+export function openResearchStream(sessionId: number): EventSource {
+  return new EventSource(`${API_URL}/research/${sessionId}/stream`);
+}
+
 export { ApiError };

@@ -51,12 +51,20 @@ CREATE TABLE IF NOT EXISTS evidence (
 );
 
 CREATE TABLE IF NOT EXISTS reports (
-    id               BIGSERIAL PRIMARY KEY,
-    session_id       BIGINT NOT NULL REFERENCES research_sessions(id) ON DELETE CASCADE,
-    report_md        TEXT,
-    citations_valid  BOOLEAN,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                BIGSERIAL PRIMARY KEY,
+    session_id        BIGINT NOT NULL REFERENCES research_sessions(id) ON DELETE CASCADE,
+    report_md         TEXT,
+    citations_valid   BOOLEAN,
+    faithfulness      DOUBLE PRECISION,
+    answer_relevancy  DOUBLE PRECISION,
+    hallucination_rate DOUBLE PRECISION,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Schema evolution: add Ragas per-run metric columns to existing report rows.
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS faithfulness DOUBLE PRECISION;
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS answer_relevancy DOUBLE PRECISION;
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS hallucination_rate DOUBLE PRECISION;
 
 -- Approximate-nearest-neighbour index for similarity search (PRD §8). Cosine ops match
 -- the normalized embeddings produced in app/embeddings.py.

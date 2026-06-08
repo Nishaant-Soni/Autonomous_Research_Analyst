@@ -108,6 +108,9 @@ class ResearchStatusOut(BaseModel):
     report_md: str | None = None
     citations_valid: bool | None = None
     low_confidence: bool | None = None
+    faithfulness: float | None = None
+    answer_relevancy: float | None = None
+    hallucination_rate: float | None = None
     error: str | None = None
 
 
@@ -132,6 +135,9 @@ def get_research(session_id: int, db: Session = Depends(get_db)) -> ResearchStat
         report_md=report.report_md if report else None,
         citations_valid=report.citations_valid if report else None,
         low_confidence=session.low_confidence,
+        faithfulness=report.faithfulness if report else None,
+        answer_relevancy=report.answer_relevancy if report else None,
+        hallucination_rate=report.hallucination_rate if report else None,
         error=session.error,
     )
 

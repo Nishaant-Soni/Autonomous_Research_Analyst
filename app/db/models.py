@@ -105,6 +105,9 @@ class Report(Base):
     )
     report_md: Mapped[str | None] = mapped_column(Text)
     citations_valid: Mapped[bool | None] = mapped_column(Boolean)
+    faithfulness: Mapped[float | None] = mapped_column(Float)
+    answer_relevancy: Mapped[float | None] = mapped_column(Float)
+    hallucination_rate: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

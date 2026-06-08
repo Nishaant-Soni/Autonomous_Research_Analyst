@@ -2,6 +2,7 @@ import { useState } from "react";
 import { DocumentUploadForm } from "./components/DocumentUploadForm";
 import { HealthBadge } from "./components/HealthBadge";
 import { QuestionForm } from "./components/QuestionForm";
+import { ResearchPanel } from "./components/ResearchPanel";
 import { RunHistory } from "./components/RunHistory";
 
 // Layout: header + (sidebar | main).
@@ -46,19 +47,7 @@ export default function App() {
           <DocumentUploadForm />
 
           {selectedSessionId !== null && (
-            <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-sm font-medium text-slate-700">
-                Selected session #{selectedSessionId}
-              </h2>
-              <p className="mt-3 text-xs text-slate-500">
-                Live progress, the rendered report, and the evidence side-panel land in
-                Phase 5 Group B. The session is being persisted in the meantime — see{" "}
-                <code className="rounded bg-slate-100 px-1 py-px font-mono">
-                  GET /research/{selectedSessionId}
-                </code>{" "}
-                for the current state.
-              </p>
-            </section>
+            <ResearchPanel sessionId={selectedSessionId} />
           )}
         </main>
       </div>

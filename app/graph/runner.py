@@ -20,6 +20,9 @@ from app.graph.build import build_graph
 
 logger = logging.getLogger(__name__)
 
+# Strong refs so background scoring tasks aren't GC'd mid-run.
+_scoring_tasks: set = set()
+
 # Graph node name (build.py) -> session status (PRD §9). We drive status off
 # `astream_events` `on_chain_start`, which fires when a node *begins*, so the status names the
 # *currently-running* stage: planning -> researching -> critiquing -> writing -> validating ->
@@ -108,6 +111,29 @@ def _emit(queue, item) -> None:
         queue.put_nowait(item)
 
 
+def _schedule_scoring(
+    session_id: int, question: str, evidence: list, report_md: str
+) -> None:
+    """Fire a background asyncio task that runs the Ragas scorer in a threadpool.
+
+    Called right after _persist_result so the run is already marked 'done' before
+    scoring starts. Scoring failure never affects the run — it's caught inside score_run.
+    """
+    import asyncio
+
+    from app.scoring.ragas import score_run
+
+    async def _run() -> None:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, score_run, session_id, question, report_md, evidence
+        )
+
+    task = asyncio.create_task(_run())
+    _scoring_tasks.add(task)
+    task.add_done_callback(_scoring_tasks.discard)
+
+
 async def run_research(session_id, question, checkpointer, queue=None) -> dict | None:
     """Run the graph for an already-created session. Returns the final state, or `None` on
     failure — the failure is recorded on the session row (status `failed` + error), not
@@ -125,6 +151,7 @@ async def run_research(session_id, question, checkpointer, queue=None) -> dict |
                     _emit(queue, {"node": ev["name"], "status": status})
         final = (await graph.aget_state(config)).values
         _persist_result(session_id, final)
+        # _schedule_scoring(session_id, question, final["evidence"], final["report_md"])
         _emit(queue, {"status": "done"})
         return final
     except Exception as exc:

@@ -11,10 +11,13 @@ trigger to loop back. The named `gaps` feed straight into the Researcher's next 
 """
 
 import json
+import logging
 
 from app.graph.state import Critique, ResearchState
 from app.llm.provider import LLMProvider, get_default_provider
 from app.models.evidence import Evidence
+
+logger = logging.getLogger(__name__)
 
 _MAX_OUTPUT_TOKENS = (
     4000  # per-agent token budget (PRD §12); JSON critique + medium reasoning
@@ -56,15 +59,30 @@ def _build_user(
     )
 
 
+_FALLBACK_CRITIQUE = Critique(
+    groundedness=1.0, needs_more_research=False, gaps=[], contradictions=[]
+)
+
+
 def _parse_critique(text: str) -> Critique:
     cleaned = text.strip()
     if cleaned.startswith("```"):  # tolerate a ```json fence if the model adds one
         cleaned = cleaned.strip("`")
         cleaned = cleaned[4:] if cleaned.lower().startswith("json") else cleaned
-    data = json.loads(cleaned)
-    groundedness = max(
-        0.0, min(1.0, float(data.get("groundedness", 0.0)))
-    )  # clamp to bound
+
+    if not cleaned:
+        logger.warning("critic returned empty response; using safe fallback critique")
+        return _FALLBACK_CRITIQUE
+
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError:
+        logger.warning(
+            "critic returned non-JSON; using safe fallback. text=%r", text[:200]
+        )
+        return _FALLBACK_CRITIQUE
+
+    groundedness = max(0.0, min(1.0, float(data.get("groundedness", 0.0))))
     return Critique(
         groundedness=groundedness,
         needs_more_research=bool(data.get("needs_more_research", False)),
@@ -92,7 +110,6 @@ def critique_findings(
     response = provider.complete(
         messages,
         text={"format": {"type": "json_object"}},
-        reasoning={"effort": "medium"},
         max_output_tokens=_MAX_OUTPUT_TOKENS,
     )
     return _parse_critique(response.output_text)
