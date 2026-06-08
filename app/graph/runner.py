@@ -1,7 +1,7 @@
 """Shared async graph runner (plan 3.1/3.2, consolidating Phase 2's run_once).
 
 Drives one research run for an already-created session: streams the graph, updates the
-session status as each node completes, optionally pushes per-node progress onto a
+session status as each node starts, optionally pushes per-node progress onto a
 caller-supplied queue, and persists the final evidence/report on success (or records
 `failed` + the error on exception).
 
@@ -20,10 +20,11 @@ from app.graph.build import build_graph
 
 logger = logging.getLogger(__name__)
 
-# Graph node name (build.py) -> session status (PRD §9). `astream(stream_mode="updates")`
-# fires *after* a node runs, so the status names the stage that has just completed; a poller
-# sees planning -> researching -> critiquing -> writing -> validating -> done, with the critic
-# loop honestly repeating researching/critiquing. Finer per-node events go to the queue (3.5).
+# Graph node name (build.py) -> session status (PRD §9). We drive status off
+# `astream_events` `on_chain_start`, which fires when a node *begins*, so the status names the
+# *currently-running* stage: planning -> researching -> critiquing -> writing -> validating ->
+# done, and the critic loop-back correctly re-shows researching/critiquing on each pass
+# (verified empirically against langgraph 0.6.x). The same events feed the SSE stream (3.5).
 _NODE_STATUS = {
     "planner": "planning",
     "researcher": "researching",
@@ -104,14 +105,14 @@ async def run_research(session_id, question, checkpointer, queue=None) -> dict |
     graph = build_graph(checkpointer=checkpointer)
     config = {"configurable": {"thread_id": str(session_id)}}
     try:
-        async for event in graph.astream(
-            _initial_state(str(session_id), question), config, stream_mode="updates"
+        async for ev in graph.astream_events(
+            _initial_state(str(session_id), question), config, version="v2"
         ):
-            for node_name in event:
-                status = _NODE_STATUS.get(node_name)
+            if ev["event"] == "on_chain_start":
+                status = _NODE_STATUS.get(ev.get("name"))
                 if status:
                     _update_session(session_id, status=status)
-                    _emit(queue, {"node": node_name, "status": status})
+                    _emit(queue, {"node": ev["name"], "status": status})
         final = (await graph.aget_state(config)).values
         _persist_result(session_id, final)
         _emit(queue, {"status": "done"})

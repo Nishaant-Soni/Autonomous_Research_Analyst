@@ -21,6 +21,25 @@ def test_empty_question_is_rejected():
     assert resp.status_code == 422
 
 
+def test_stream_drains_queue_events():
+    # The drain path reads only the in-process queue (no DB): seed it, then stream it out.
+    from app.api.progress import create_queue, remove_queue
+
+    session_id = 987654
+    queue = create_queue(session_id)
+    queue.put_nowait({"node": "planner", "status": "planning"})
+    queue.put_nowait({"status": "done"})
+    queue.put_nowait(None)  # sentinel
+
+    client = TestClient(app)
+    resp = client.get(f"/research/{session_id}/stream")
+    remove_queue(session_id)
+
+    assert resp.status_code == 200
+    assert '"node": "planner"' in resp.text
+    assert '"status": "done"' in resp.text
+
+
 @requires_db
 def test_start_research_returns_id_and_creates_session(monkeypatch):
     # Stub the runner so the background task doesn't run the real graph.
@@ -137,3 +156,26 @@ def test_get_evidence_returns_web_and_rag_items():
     assert web["source_url"] == "https://example.com"
     rag = next(i for i in items if i["retriever"] == "rag")
     assert rag["source_chunk_id"] == chunk_id
+
+
+@requires_db
+def test_stream_falls_back_to_status_when_no_queue():
+    from app.db.models import ResearchSession
+    from app.db.session import SessionLocal
+
+    with SessionLocal() as db:
+        session = ResearchSession(question="Q", status="done")
+        db.add(session)
+        db.commit()
+        session_id = session.id
+
+    client = TestClient(app)
+    resp = client.get(f"/research/{session_id}/stream")
+    assert resp.status_code == 200
+    assert '"status": "done"' in resp.text
+
+
+@requires_db
+def test_stream_missing_session_returns_404():
+    client = TestClient(app)
+    assert client.get("/research/999999/stream").status_code == 404

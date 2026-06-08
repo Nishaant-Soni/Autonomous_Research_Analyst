@@ -1,12 +1,14 @@
 """Async research API (plan 3.1): start a run and return its id immediately."""
 
 import asyncio
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.progress import create_queue, remove_queue
+from app.api.progress import create_queue, get_queue, remove_queue
 from app.db.models import Evidence as EvidenceRow
 from app.db.models import Report, ResearchSession
 from app.db.session import SessionLocal, get_db
@@ -119,3 +121,37 @@ def get_evidence(session_id: int, db: Session = Depends(get_db)) -> list[Evidenc
         )
         for r in rows
     ]
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+@router.get("/research/{session_id}/stream")
+async def stream_research(session_id: int) -> StreamingResponse:
+    """SSE per-agent progress (3.5). Drains the session's in-process queue, emitting each
+    per-node event until the run's `None` sentinel. A late/early subscriber with no live
+    queue (run already finished and cleaned up) gets the terminal DB status once."""
+    queue = get_queue(session_id)
+    if queue is not None:
+
+        async def _drain():
+            while True:
+                item = await queue.get()
+                if item is None:  # sentinel: run finished, stream closed
+                    break
+                yield _sse(item)
+
+        return StreamingResponse(_drain(), media_type="text/event-stream")
+
+    # No live queue: the run already finished (and its queue was removed), or never existed.
+    with SessionLocal() as db:
+        session = db.get(ResearchSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    status = session.status
+
+    async def _terminal():
+        yield _sse({"status": status})
+
+    return StreamingResponse(_terminal(), media_type="text/event-stream")
