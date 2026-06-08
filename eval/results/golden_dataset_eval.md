@@ -1,4 +1,4 @@
-# Eval report — `20260608T142303Z`
+# Eval report — `20260608T142303Z` (golden dataset)
 
 - **Items scored:** 16
 - **Corpus retrievability:** PASSED

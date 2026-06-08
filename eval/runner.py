@@ -17,16 +17,23 @@ from app.graph.runner import build_initial_state
 from eval.dataset import GoldenItem
 
 
-async def run_one_question(item: GoldenItem, run_id: str | None = None) -> dict:
+async def run_one_question(
+    item: GoldenItem,
+    run_id: str | None = None,
+    max_iterations: int | None = None,
+) -> dict:
     """Run the graph for one golden item. Returns {final, latency_seconds} on success;
     raises on graph failure (caller decides whether to continue the run).
 
     `run_id` is the parent eval run's id (`eval/runs/<run-id>/`); when provided, it is
     forwarded to LangSmith as trace metadata + a `run_name` so the Score stage (B3) can
     query token usage per item via the LangSmith API. `None` runs unlabeled (still traced
-    if LANGSMITH_API_KEY is set, just without the eval-specific tags)."""
+    if LANGSMITH_API_KEY is set, just without the eval-specific tags).
+
+    `max_iterations` overrides `settings.max_iterations` for this run only — set to `0`
+    to disable the critic loop-back for the C2 A/B."""
     graph = build_graph()  # no checkpointer: eval is one-shot, no resume needed
-    initial = build_initial_state(item.id, item.question)
+    initial = build_initial_state(item.id, item.question, max_iterations=max_iterations)
     config: dict = {}
     if run_id is not None:
         config = {

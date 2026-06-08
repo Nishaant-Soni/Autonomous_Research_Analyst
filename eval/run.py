@@ -46,6 +46,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="ingest + retrievability only; skip graph runs (cheap, no LLM)",
     )
+    p.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help="override settings.max_iterations for this run (0 disables the critic loop, "
+        "used for the C2 A/B comparison)",
+    )
     return p.parse_args(argv)
 
 
@@ -86,7 +93,9 @@ async def _main(args: argparse.Namespace) -> int:
             item_dir = run_dir / item.id
             logger.info("running %s (%s)", item.id, item.target)
             try:
-                result = await run_one_question(item, run_id=run_id)
+                result = await run_one_question(
+                    item, run_id=run_id, max_iterations=args.max_iterations
+                )
                 persist_artifacts(item_dir, item, result)
                 per_item.append(
                     {
@@ -123,6 +132,7 @@ async def _main(args: argparse.Namespace) -> int:
                 "skipped_ingest": args.skip_ingest,
                 "skipped_retrievability": args.skip_retrievability,
                 "only_retrievability": args.only_retrievability,
+                "max_iterations": args.max_iterations,  # None = use settings default
                 "item_count": len(items),
                 "ingest": ingest_summary,
             },

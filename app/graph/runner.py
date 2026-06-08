@@ -34,9 +34,15 @@ _NODE_STATUS = {
 }
 
 
-def build_initial_state(session_id: str, question: str) -> dict:
+def build_initial_state(
+    session_id: str, question: str, max_iterations: int | None = None
+) -> dict:
     """Initial `ResearchState` for a new run. Public so the eval harness can build the same
-    state without going through `run_research` (which writes a DB session row)."""
+    state without going through `run_research` (which writes a DB session row).
+
+    `max_iterations` overrides `settings.max_iterations` per call — set to `0` to disable
+    the critic loop-back (the critic node still runs but the conditional edge never
+    routes back to the researcher). Used by the C2 critic-loop A/B (plan 4.7)."""
     return {
         "session_id": session_id,
         "question": question,
@@ -45,7 +51,9 @@ def build_initial_state(session_id: str, question: str) -> dict:
         "draft_findings": "",
         "critique": None,
         "iteration": 0,
-        "max_iterations": settings.max_iterations,
+        "max_iterations": (
+            max_iterations if max_iterations is not None else settings.max_iterations
+        ),
         "report_md": "",
         "citations_valid": False,
         "low_confidence": False,

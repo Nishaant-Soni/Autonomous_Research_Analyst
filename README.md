@@ -19,8 +19,9 @@ Built so far:
 - **Reliability + observability (Phase 3 complete)** — every LLM call has a per-call timeout + automatic retries, and each agent has a token budget (PRD §12); a failed agent fails the session cleanly (`failed` + `error`) rather than hanging. With a `LANGSMITH_API_KEY` set, runs are traced in LangSmith with per-agent node spans plus per-call token usage and latency (`app/observability.py`).
 - **Eval dataset + run harness (Phase 4 Group A complete)** — `eval/golden.jsonl` holds 16 schema-validated research questions (10 web + 6 corpus), each with reference key facts used as Ragas ground truth. Corpus items are backed by a committed, self-authored seed corpus (`eval/corpus/*.md`) and the loader enforces that every corpus fact is verbatim-supported by its source doc. `python -m eval.run` ingests the corpus idempotently, runs the full graph per item, persists per-question artifacts (`report.md` / `evidence.jsonl` / `result.json`) to `eval/runs/<run-id>/<item.id>/`, and runs a deterministic retrievability check confirming every corpus fact is actually surfaced by the production embedder + retriever. Run/score/report separation — metrics in Group B read these cached artifacts and never re-run the pipeline.
 - **Eval Score + Report stages (Phase 4 Group B complete)** — `python -m eval.score` reads cached artifacts and writes `scores.json` with all six PRD §10 metric families: deterministic citation accuracy + Ragas-judged faithfulness, answer relevancy, context recall, the derived `hallucination_rate = 1 − faithfulness`, wall-clock latency, and per-item cost in USD (sourced from LangSmith token usage × a pinned `gpt-5.4-mini` price table). `python -m eval.report` then renders a small, **committed** Markdown report at `eval/results/<run-id>.md` so iterations are comparable. Graceful degrades on a missing LangSmith key (cost block omitted, never crashes) and `--skip-ragas` keeps the deterministic-only path available.
+- **Critic-loop A/B (Phase 4 C2 complete)** — `python -m eval.compare` diffs two scored runs and writes a versioned, committed A/B report. The committed C2 result (`eval/results/critic_loop_AB.md`, 16-item golden set, n=16): **critic loop ON vs OFF on hallucination rate is 5.5% vs 4.8% (Δ 0.7pp — within noise)**, while the loop costs **2× latency and 2× dollars**. The per-item table shows the loop is *selectively* useful — large wins on broad comparison questions (`rag-vs-finetuning` -17.6pp) but losses on simpler ones (`rag-components` +10.0pp). Honest result; the eval surfaces both effects transparently rather than fabricating a headline win.
 
-Not yet built: Phase 4 C2 (critic-loop before/after — *the headline portfolio number*) and Phase 5 (UI + README polish). C1 (embedding A/B) deferred — see plan §4.6.
+Not yet built: Phase 5 (UI + README polish).
 
 ## HTTP endpoints
 
@@ -98,6 +99,10 @@ pip install -e ".[eval]"                   # one-time: Ragas + langchain-openai 
 python -m eval.score                       # score the latest run dir (all six metric families)
 python -m eval.score --skip-ragas          # deterministic only (no judge-LLM cost)
 python -m eval.report                      # render eval/results/<run-id>.md (committed)
+
+# A/B compare two scored runs (e.g. the critic-loop ON/OFF A/B in C2)
+python -m eval.compare --a <id_a> --b <id_b> --name critic_loop_AB \
+    --label-a "Critic loop ON" --label-b "Critic loop OFF"
 ```
 
 Artifacts land under `eval/runs/<run-id>/` (gitignored). Per item: `report.md`,
