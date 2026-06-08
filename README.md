@@ -18,8 +18,9 @@ Built so far:
 - **Async research API (Phase 3 complete)** — `POST /research` creates a session and kicks off the graph run as a background task, returning a `session_id` immediately. A shared runner (`app/graph/runner.py`) drives the session status through `planning → researching → critiquing → writing → validating → done | failed`, persists the report and the citation validator's low-confidence signal, and pushes per-agent progress onto an in-process queue (`app/api/progress.py`). `GET /research/{id}` polls status (and returns the report once done), `GET /research/{id}/evidence` inspects the gathered evidence, and `GET /research/{id}/stream` streams per-agent progress over SSE (status names the currently-running stage, via LangGraph node-start events). `run_once` now shares this runner.
 - **Reliability + observability (Phase 3 complete)** — every LLM call has a per-call timeout + automatic retries, and each agent has a token budget (PRD §12); a failed agent fails the session cleanly (`failed` + `error`) rather than hanging. With a `LANGSMITH_API_KEY` set, runs are traced in LangSmith with per-agent node spans plus per-call token usage and latency (`app/observability.py`).
 - **Eval dataset + run harness (Phase 4 Group A complete)** — `eval/golden.jsonl` holds 16 schema-validated research questions (10 web + 6 corpus), each with reference key facts used as Ragas ground truth. Corpus items are backed by a committed, self-authored seed corpus (`eval/corpus/*.md`) and the loader enforces that every corpus fact is verbatim-supported by its source doc. `python -m eval.run` ingests the corpus idempotently, runs the full graph per item, persists per-question artifacts (`report.md` / `evidence.jsonl` / `result.json`) to `eval/runs/<run-id>/<item.id>/`, and runs a deterministic retrievability check confirming every corpus fact is actually surfaced by the production embedder + retriever. Run/score/report separation — metrics in Group B read these cached artifacts and never re-run the pipeline.
+- **Eval citation-accuracy score (Phase 4 Group B1 complete)** — `python -m eval.score` reads cached artifacts from a run dir and writes `scores.json` with per-item + aggregate citation accuracy (derived from the citation validator's `stripped_fraction`). Failed items are surfaced separately rather than averaged in as zero. Designed so B2 (Ragas) and B3 (latency/cost + the aggregate report) extend the same file.
 
-Not yet built (Phase 4 Group B + C, plus Phase 5): metric scoring (Ragas, citation accuracy, hallucination rate, latency/cost), the versioned aggregate eval report, the embedding A/B, prompt-tuning before/after, and the UI.
+Not yet built (Phase 4 Group B2/B3 + Group C, plus Phase 5): Ragas metrics (faithfulness, answer relevance, context recall) and the derived hallucination rate, latency/cost from LangSmith, the versioned aggregate eval report, the embedding A/B, prompt-tuning before/after, and the UI.
 
 ## HTTP endpoints
 
@@ -92,12 +93,13 @@ python -m scripts.run_once "hi"        # one-time: bootstraps the DB schema (any
 python -m eval.run --only-retrievability   # cheap: confirms every corpus key_fact is surfaced
 python -m eval.run --limit 2               # smoke: runs the graph over the first 2 items
 python -m eval.run                         # full: all 16 items (costs LLM tokens; ~30-60 min)
+python -m eval.score                       # score the latest run dir (citation accuracy today)
 ```
 
 Artifacts land under `eval/runs/<run-id>/` (gitignored). Per item: `report.md`,
 `evidence.jsonl`, `result.json`. Run-level: `meta.json`, `summary.json`,
-`retrievability.json`. Failures are isolated per-item (`error.txt`) so one bad item doesn't
-sink the run.
+`retrievability.json`, `scores.json` (after `eval.score`). Failures are isolated per-item
+(`error.txt`) so one bad item doesn't sink the run.
 
 ## Tests
 

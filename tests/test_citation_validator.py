@@ -112,11 +112,16 @@ def test_abbreviation_period_does_not_split_sentence_mid_abbreviation():
 def test_abbreviation_protection_handles_multiple_forms_in_one_line():
     # e.g. (Latin) + Dr. (title) + Inc. (business) all on one line; the unresolved ref is
     # the only thing that causes a drop, and the abbreviations don't fragment the sentence.
-    report = "Dr. Smith of Acme Inc. studied LLMs, e.g. the 7B class [ev:0]. Bad [ev:9]."
+    report = (
+        "Dr. Smith of Acme Inc. studied LLMs, e.g. the 7B class [ev:0]. Bad [ev:9]."
+    )
     result = validate_citations(report, _web_evidence(1))
 
     assert result.citations_valid is False
-    assert "Dr. Smith of Acme Inc. studied LLMs, e.g. the 7B class [1]." in result.cleaned_report
+    assert (
+        "Dr. Smith of Acme Inc. studied LLMs, e.g. the 7B class [1]."
+        in result.cleaned_report
+    )
     assert "Bad" not in result.cleaned_report
 
 

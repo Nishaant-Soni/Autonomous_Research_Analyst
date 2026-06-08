@@ -42,10 +42,29 @@ _SOURCES_HEADER_RE = re.compile(
 # at a position), so "U.S.A." matches before "U.S.". Case-sensitive on purpose — these
 # are the canonical forms; broadening to IGNORECASE would invite false positives.
 _ABBREVIATIONS = (
-    "U.S.A.", "U.S.", "U.K.", "U.N.", "E.U.", "D.C.",
-    "Dr.", "Mr.", "Mrs.", "Ms.", "Prof.", "Sr.", "Jr.", "St.",
-    "e.g.", "i.e.", "etc.", "vs.", "cf.",
-    "Inc.", "Ltd.", "Co.", "Corp.",
+    "U.S.A.",
+    "U.S.",
+    "U.K.",
+    "U.N.",
+    "E.U.",
+    "D.C.",
+    "Dr.",
+    "Mr.",
+    "Mrs.",
+    "Ms.",
+    "Prof.",
+    "Sr.",
+    "Jr.",
+    "St.",
+    "e.g.",
+    "i.e.",
+    "etc.",
+    "vs.",
+    "cf.",
+    "Inc.",
+    "Ltd.",
+    "Co.",
+    "Corp.",
 )
 _ABBREV_RE = re.compile("|".join(re.escape(a) for a in _ABBREVIATIONS))
 _DOT_PLACEHOLDER = "\x00"  # NUL: can't legally appear in the Writer's Markdown output
@@ -127,7 +146,9 @@ def _split_sentences(line: str) -> list[str]:
     protected = _ABBREV_RE.sub(
         lambda m: m.group(0).replace(".", _DOT_PLACEHOLDER), line
     )
-    return [p.replace(_DOT_PLACEHOLDER, ".") for p in _SENTENCE_SPLIT_RE.split(protected)]
+    return [
+        p.replace(_DOT_PLACEHOLDER, ".") for p in _SENTENCE_SPLIT_RE.split(protected)
+    ]
 
 
 def _strip_orphan_sentences(body: str, valid_max: int) -> tuple[str, float]:
