@@ -15,10 +15,10 @@ Built so far:
 - **Agent-graph foundation** — the shared `ResearchState` contract and `Critique` model (`app/graph/state.py`), with a deduplicating reducer so evidence accumulates across the critic loop without the same source landing twice.
 - **All five agent nodes** — Planner (`app/agents/planner.py`, decomposes a question into 3–6 sub-questions), Researcher (`app/agents/researcher.py`, a tool-using loop over `web_search` + `rag_retrieve` that gathers `Evidence` and drafts findings), Critic (`app/agents/critic.py`, LLM-as-judge emitting a groundedness score + `needs_more_research`), Writer (`app/agents/writer.py`, synthesizes a structured report citing evidence by `[ev:i]`), and Citation validator (`app/agents/citation_validator.py`, pure code that drops unsupported claims, then assigns the final `[1..k]` numbering + sources list).
 - **The research graph (Phase 2 complete)** — `app/graph/build.py` wires the five nodes into a LangGraph `StateGraph` with a bounded critic loop (`max_iterations`) and Postgres checkpointing. `python -m scripts.run_once "<question>"` runs the whole pipeline end-to-end and prints a cited Markdown report.
-- **Async research API (Phase 3, in progress)** — `POST /research` creates a session and kicks off the graph run as a background task, returning a `session_id` immediately. A shared runner (`app/graph/runner.py`) drives the session status through `planning → researching → critiquing → writing → validating → done | failed`, persists the report and the citation validator's low-confidence signal, and pushes per-agent progress onto an in-process queue (`app/api/progress.py`) for the upcoming SSE stream. `GET /research/{id}` polls status (and returns the report once done), `GET /research/{id}/evidence` inspects the gathered evidence, and `GET /research/{id}/stream` streams per-agent progress over SSE (the runner drives status off LangGraph node-start events, so it names the currently-running stage). `run_once` now shares this runner.
+- **Async research API (Phase 3 complete)** — `POST /research` creates a session and kicks off the graph run as a background task, returning a `session_id` immediately. A shared runner (`app/graph/runner.py`) drives the session status through `planning → researching → critiquing → writing → validating → done | failed`, persists the report and the citation validator's low-confidence signal, and pushes per-agent progress onto an in-process queue (`app/api/progress.py`). `GET /research/{id}` polls status (and returns the report once done), `GET /research/{id}/evidence` inspects the gathered evidence, and `GET /research/{id}/stream` streams per-agent progress over SSE (status names the currently-running stage, via LangGraph node-start events). `run_once` now shares this runner.
+- **Reliability + observability (Phase 3 complete)** — every LLM call has a per-call timeout + automatic retries, and each agent has a token budget (PRD §12); a failed agent fails the session cleanly (`failed` + `error`) rather than hanging. With a `LANGSMITH_API_KEY` set, runs are traced in LangSmith with per-agent node spans plus per-call token usage and latency (`app/observability.py`).
 
-Not yet built: reliability wrappers (retry/timeout/budget), LangSmith tracing, the
-evaluation harness, and the UI.
+Not yet built: the evaluation harness and the UI.
 
 ## HTTP endpoints
 
@@ -114,8 +114,11 @@ All settings come from environment variables / `.env` (see [`.env.example`](./.e
 | Variable | Purpose |
 |----------|---------|
 | `DATABASE_URL` | Postgres connection string |
-| `OPENAI_API_KEY` | LLM agents (added in a later phase) |
+| `OPENAI_API_KEY` | LLM agents (Planner / Researcher / Critic / Writer) |
 | `TAVILY_API_KEY` | Web search (Tavily) — the `web_search` retriever and live web test |
-| `LANGSMITH_API_KEY` | Optional tracing |
+| `LANGSMITH_API_KEY` | Optional — set to enable LangSmith tracing (per-agent spans, token usage, latency) |
+| `LANGSMITH_PROJECT` | LangSmith project name (default `autonomous-research-analyst`) |
+| `LLM_TIMEOUT_SECONDS` | Per-call LLM timeout, a hang ceiling (default `120`) |
+| `LLM_MAX_RETRIES` | LLM retries for transient errors (default `2`) |
 | `EMBEDDING_MODEL` | Local embedding model (default `BAAI/bge-small-en-v1.5`) |
 | `MAX_ITERATIONS` | Hard cap on the critic loop (default `2`) |

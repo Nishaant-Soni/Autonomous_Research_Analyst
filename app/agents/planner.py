@@ -18,6 +18,9 @@ from app.llm.provider import LLMProvider, get_default_provider
 
 _MIN_SUBQUESTIONS = 3
 _MAX_SUBQUESTIONS = 6
+_MAX_OUTPUT_TOKENS = (
+    2000  # per-agent token budget (PRD §12); a short JSON list of sub-qs
+)
 
 _SYSTEM_PROMPT = (
     "You are the planning agent of an autonomous research system. Decompose the user's "
@@ -50,7 +53,11 @@ def plan_research(question: str, provider: LLMProvider | None = None) -> list[st
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": question},
     ]
-    response = provider.complete(messages, text={"format": {"type": "json_object"}})
+    response = provider.complete(
+        messages,
+        text={"format": {"type": "json_object"}},
+        max_output_tokens=_MAX_OUTPUT_TOKENS,
+    )
     return _parse_sub_questions(response.output_text)
 
 

@@ -22,6 +22,10 @@ from app.models.evidence import Evidence
 from app.retrieval.rag import rag_retrieve
 from app.retrieval.web import web_search
 
+_MAX_OUTPUT_TOKENS = (
+    6000  # per-agent token budget (PRD §12), applied per call in the loop
+)
+
 _SYSTEM_PROMPT = (
     "You are the research agent of an autonomous research system. Gather evidence using the "
     "provided tools and synthesize concise draft findings.\n"
@@ -124,7 +128,9 @@ def run_researcher(
     gathered: list[Evidence] = []
 
     for _ in range(max_rounds):
-        response = provider.complete(conversation, tools=_TOOLS)
+        response = provider.complete(
+            conversation, tools=_TOOLS, max_output_tokens=_MAX_OUTPUT_TOKENS
+        )
         conversation = conversation + list(response.output)  # carry model items forward
         calls = [
             it for it in response.output if getattr(it, "type", None) == "function_call"
@@ -149,7 +155,9 @@ def run_researcher(
             "content": "Stop searching and write your findings now from the evidence above.",
         }
     )
-    final = provider.complete(conversation, tools=None)
+    final = provider.complete(
+        conversation, tools=None, max_output_tokens=_MAX_OUTPUT_TOKENS
+    )
     return {"evidence": gathered, "draft_findings": final.output_text}
 
 

@@ -16,6 +16,10 @@ from app.graph.state import Critique, ResearchState
 from app.llm.provider import LLMProvider, get_default_provider
 from app.models.evidence import Evidence
 
+_MAX_OUTPUT_TOKENS = (
+    4000  # per-agent token budget (PRD §12); JSON critique + medium reasoning
+)
+
 _SYSTEM_PROMPT = (
     "You are the critic / fact-checker of an autonomous research system. You receive a "
     "research question, its planned sub-questions, the evidence gathered, and a draft of "
@@ -89,6 +93,7 @@ def critique_findings(
         messages,
         text={"format": {"type": "json_object"}},
         reasoning={"effort": "medium"},
+        max_output_tokens=_MAX_OUTPUT_TOKENS,
     )
     return _parse_critique(response.output_text)
 

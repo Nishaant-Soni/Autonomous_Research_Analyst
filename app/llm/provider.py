@@ -21,16 +21,36 @@ class LLMProvider(ABC):
 
 
 class OpenAIProvider(LLMProvider):
-    def __init__(self, api_key: str | None = None, model: str = "gpt-5.4-mini") -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str = "gpt-5.4-mini",
+        timeout: float | None = None,
+        max_retries: int | None = None,
+        trace: bool = False,
+    ) -> None:
         self._api_key = api_key
         self.model = model
+        self._timeout = timeout  # per-call timeout; SDK retries handle transient errors
+        self._max_retries = max_retries
+        self._trace = trace  # wrap with LangSmith tracing (token usage + latency)
         self._client: Any = None  # created lazily so instantiation needs no key
 
     def _get_client(self) -> Any:
         if self._client is None:
             from openai import OpenAI
 
-            self._client = OpenAI(api_key=self._api_key or None)
+            kwargs: dict[str, Any] = {"api_key": self._api_key or None}
+            if self._timeout is not None:
+                kwargs["timeout"] = self._timeout
+            if self._max_retries is not None:
+                kwargs["max_retries"] = self._max_retries
+            client = OpenAI(**kwargs)
+            if self._trace:
+                from langsmith.wrappers import wrap_openai
+
+                client = wrap_openai(client)
+            self._client = client
         return self._client
 
     def complete(
@@ -61,5 +81,10 @@ def get_default_provider() -> LLMProvider:
     if _default_provider is None:
         from app.config import settings
 
-        _default_provider = OpenAIProvider(api_key=settings.openai_api_key)
+        _default_provider = OpenAIProvider(
+            api_key=settings.openai_api_key,
+            timeout=settings.llm_timeout_seconds,
+            max_retries=settings.llm_max_retries,
+            trace=bool(settings.langsmith_api_key),
+        )
     return _default_provider

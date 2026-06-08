@@ -16,9 +16,11 @@ from app.db.init_db import checkpointer_cm, init_db
 from app.db.models import ResearchSession
 from app.db.session import SessionLocal
 from app.graph.runner import run_research
+from app.observability import configure_langsmith
 
 
 async def run_once(question: str) -> dict | None:
+    configure_langsmith()  # enable tracing if a LANGSMITH_API_KEY is set (3.7); else a no-op
     # Open a session row up front so the run has a stable id (used as the graph thread_id).
     with SessionLocal() as db:
         session = ResearchSession(question=question, status="planning")

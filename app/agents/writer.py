@@ -15,6 +15,10 @@ from app.graph.state import ResearchState
 from app.llm.provider import LLMProvider, get_default_provider
 from app.models.evidence import Evidence
 
+_MAX_OUTPUT_TOKENS = (
+    15000  # per-agent token budget (PRD §12); full report + medium reasoning
+)
+
 _SYSTEM_PROMPT = (
     "You are the report writer of an autonomous research system. Write a structured Markdown "
     "report with exactly these sections: '## Executive Summary', '## Findings' (organized into "
@@ -59,7 +63,11 @@ def write_report(
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": user},
     ]
-    return provider.complete(messages, reasoning={"effort": "medium"}).output_text
+    return provider.complete(
+        messages,
+        reasoning={"effort": "medium"},
+        max_output_tokens=_MAX_OUTPUT_TOKENS,
+    ).output_text
 
 
 def writer_node(state: ResearchState) -> dict:
