@@ -15,8 +15,6 @@ class Settings(BaseSettings):
     langsmith_project: str = "autonomous-research-analyst"
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     max_iterations: int = 2
-    # Reliability (PRD §12): per-call timeout (a hang ceiling) + SDK retry count for
-    # transient 429/5xx/connection errors. Applied to the OpenAI client.
     llm_timeout_seconds: float = 120.0
     llm_max_retries: int = 2
 
