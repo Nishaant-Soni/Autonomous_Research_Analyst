@@ -100,7 +100,7 @@ It demonstrates, in one project, the exact bundle of skills entry-level AI/ML en
 ```
 
 ### 5.2 Orchestration: LangGraph supervisor pattern
-The graph is a `StateGraph` with the agents above as nodes. A shared typed state object flows through every node. The Critic node has a conditional edge: if it flags gaps and the iteration counter is below the cap, control routes back to the Researcher; otherwise it proceeds to the Writer. This bounded self-correction loop is the "debate / refine findings" behavior, with a hard `max_iterations` guard so it always terminates.
+The graph is a `StateGraph` with the agents above as nodes. A shared typed state object flows through every node. The Critic node has a conditional edge: the loop-back fires only when **both** `groundedness < 0.70` **and** `len(gaps) ≥ 2` and the iteration cap has not been reached; otherwise control proceeds to the Writer. This two-signal AND gate was tuned in a 3-arm A/B experiment (see §10) — requiring two independent signals prevents the over-eager loop-back behaviour of a single `needs_more_research` boolean. A hard `max_iterations` cap guarantees termination regardless.
 
 LangGraph checkpoints to Postgres, so a run is resumable and inspectable, and human-in-the-loop pause points can be added later without re-architecting.
 
@@ -117,6 +117,8 @@ class ResearchState(TypedDict):
     max_iterations: int             # hard cap, e.g. 2
     report_md: str
     citations_valid: bool
+    low_confidence: bool            # set by citation validator: >50% of cited claims stripped
+    stripped_fraction: float        # fraction of cited sentences dropped by the validator
 ```
 `Evidence` carries `claim`, `content`, `source_url` or `source_chunk_id`, and `retriever` ("web" | "rag"). Keeping evidence structured from the moment it's gathered is what makes deterministic citation validation possible at the end.
 
@@ -130,7 +132,7 @@ Each agent is a single LLM call (or tool-using loop) with a tightly scoped syste
 
 **Researcher.** Input: the plan and any prior critique. Tools: `web_search` (Tavily) and `rag_retrieve` (pgvector similarity search). It works each sub-question, collects evidence as structured `Evidence` objects, and writes draft findings. On a loop-back pass it focuses only on the gaps the Critic named.
 
-**Critic / fact-checker.** Input: draft findings + the evidence list. It checks that each claim is actually supported by the cited evidence, flags unsupported claims, contradictions, and missing angles, and emits a groundedness score plus a `needs_more_research` boolean. This is LLM-as-judge used internally, not just for offline eval.
+**Critic / fact-checker.** Input: draft findings + the evidence list. It checks that each claim is actually supported by the cited evidence, flags unsupported claims, contradictions, and missing angles, and emits a JSON object with a groundedness score (0–1), a `needs_more_research` boolean, a `gaps` list, and a `contradictions` list. This is LLM-as-judge used internally, not just for offline eval. The routing gate uses `groundedness` and `len(gaps)` — not the `needs_more_research` boolean — because the two-signal AND was found more selective in the A/B (§10). The boolean is preserved on state for observability.
 
 **Writer.** Input: validated findings + evidence. Output: a structured Markdown report (executive summary, findings by theme, conclusion) with inline numeric citation markers `[1]`, `[2]` and a sources list. It is instructed to cite only from supplied evidence and never introduce new facts.
 
@@ -163,11 +165,15 @@ The guiding principle is *one well-chosen tool per job*. The original brief list
 ```
 documents      (id, source_uri, title, raw_text, metadata jsonb, created_at)
 chunks         (id, document_id fk, chunk_index, content, embedding vector(384))
-research_sessions (id, question, status, plan jsonb, created_at, completed_at)
+research_sessions (id, question, status, plan jsonb, low_confidence bool,
+                   stripped_fraction float, error text, created_at, completed_at)
 evidence       (id, session_id fk, claim, content, source_url, source_chunk_id fk?,
                 retriever, created_at)
-reports        (id, session_id fk, report_md, citations_valid bool, created_at)
+reports        (id, session_id fk, report_md, citations_valid bool,
+                faithfulness float, answer_relevancy float, hallucination_rate float,
+                created_at)
 ```
+`research_sessions.low_confidence` and `stripped_fraction` are set by the citation validator node and surfaced on `GET /research/{id}`. `research_sessions.error` holds the exception string on failed runs. The three float columns on `reports` are nullable (populated only when per-run Ragas scoring is enabled; disabled by default).
 An HNSW or IVFFlat index on `chunks.embedding` handles similarity search. The vector dimension (384, for `bge-small-en-v1.5`) must match the chosen embedding model and be identical at ingest and query time — changing models means re-embedding the corpus and altering the column. Model-specific note: `bge-small-en-v1.5` reaches its best retrieval scores when *queries* (not stored documents) are prefixed with a short instruction such as `"Represent this sentence for searching relevant passages: "`. Apply the prefix only on the query path. `all-MiniLM-L6-v2` (also 384-dim, so drop-in compatible) needs no prefix, which makes it a friction-free baseline. `evidence.source_chunk_id` links corpus-derived claims back to exact chunks; web-derived claims carry `source_url`. This dual path is what lets the citation validator verify both source types uniformly.
 
 ---
@@ -176,12 +182,14 @@ An HNSW or IVFFlat index on `chunks.embedding` handles similarity search. The ve
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/documents` | Ingest a document: chunk, embed, store |
+| GET | `/health` | Liveness check |
+| POST | `/documents` | Ingest raw text (JSON body): chunk, embed, store |
+| POST | `/documents/upload` | Ingest a file upload (`.txt`/`.md`/`.pdf`, ≤ 5 MB): parsed server-side via pypdf |
 | POST | `/research` | Start a research session (async) → `{session_id}` |
+| GET | `/research?limit=N` | List recent sessions (slim summaries, newest-first) — drives the React sidebar |
 | GET | `/research/{id}` | Poll status + final report when ready |
 | GET | `/research/{id}/stream` | SSE stream of per-agent progress events |
 | GET | `/research/{id}/evidence` | Inspect the evidence behind the report |
-| GET | `/health` | Liveness check |
 
 Research runs are dispatched as background tasks; the client polls or subscribes to the stream. Status moves through `planning → researching → critiquing → writing → validating → done | failed`.
 
@@ -198,7 +206,7 @@ A small **golden dataset** of ~15–20 research questions, each with a known set
 - **Hallucination rate** — claims with no supporting evidence (inverse of faithfulness, surfaced explicitly because it's the headline number).
 - **Latency and cost per run** — pulled from LangSmith.
 
-Results are written to a versioned report so you can show improvement over iterations — e.g. "adding the Critic loop cut hallucination rate from 14% to 4%." That before/after number is the single most persuasive thing in an interview.
+Results are written to a versioned report so iterations are comparable. A 3-arm experiment (original gate / gate OFF / tightened gate) was run over the 16-item golden set. Key outcome: the tightened gate (`groundedness < 0.70 AND gaps ≥ 2`) cut hallucination rate from **5.5% → 4.1%** (~25% relative reduction) vs. the original over-eager gate, at near-OFF cost. The original gate fired on every item and produced a 7-help / 7-hurt / 2-tied wash; the tightened gate fires on only 3 of 16 items — exactly where a second research pass is worth paying for. Full results: `eval/results/critic_three_way.md`.
 
 ---
 
@@ -227,17 +235,17 @@ LangSmith captures every agent's prompt, output, token usage, latency, and the f
 
 **Phase 3 — Service + streaming (2 days).** Async `/research` job execution, status polling, SSE progress stream. LangSmith tracing on.
 
-**Phase 4 — Evaluation (2–3 days).** Build the golden dataset, integrate Ragas, write the eval CLI and versioned results report. Tune prompts; record before/after metrics. Sub-task: A/B the two embedding models (`bge-small-en-v1.5` with query prefix vs. `all-MiniLM-L6-v2`) over the same golden set and pick based on context recall — both are 384-dim, so the swap needs no schema change.
+**Phase 4 — Evaluation (2–3 days).** Build the golden dataset, integrate Ragas, write the eval CLI and versioned results report. Tune prompts; record before/after metrics. Sub-task: A/B the two embedding models (`bge-small-en-v1.5` with query prefix vs. `all-MiniLM-L6-v2`) over the same golden set and pick based on context recall — both are 384-dim, so the swap needs no schema change. **Embedding A/B was deferred** — the 3-arm critic-loop A/B (original / OFF / tightened gate) was prioritised instead as it directly produced the headline hallucination improvement used in the README and interview story.
 
-**Phase 5 — UI + polish (2–3 days).** React (Vite + TS + Tailwind) app: submit question, watch the SSE progress stream live, read the report, inspect the evidence behind any claim. README with architecture diagram, a recorded demo, and the eval numbers up top.
-
-**Stretch (optional).** In rough order of leverage: **(a) Expose the pipeline as an MCP server** — a thin adapter over the existing graph runner exposing a `research(question)` tool (and optionally `ingest_document`), so any MCP client (Claude Desktop, Cursor, etc.) can invoke the full multi-agent pipeline and receive a cited report. Reuses the existing data model and agents; no architectural change. This is the highest-signal add given where the ecosystem is heading. (b) `.pptx` slide export of the report (FR-12); (c) Pinecone migration write-up; (d) human-in-the-loop approval gate before the Writer runs.
+**Phase 5 — UI + polish (2–3 days).** React (Vite + TS + Tailwind) app: submit question, watch the SSE progress stream live, read the report, inspect the evidence behind any claim. README with architecture diagram, a recorded demo, and the eval numbers up top. 
 
 ---
 
 ## 14. Success metrics
 
 The project is "done" and demo-ready when: an end-to-end run completes in under ~3 minutes; citation accuracy is 100% (validator passes); faithfulness exceeds ~0.9 on the golden set; the entire system comes up with one `docker-compose up`; and the README leads with a measured hallucination-rate improvement attributable to the Critic loop.
+
+**Achieved (tightened-gate arm, n=16 golden set):** citation accuracy 100% ✓, faithfulness 95.9% ✓, hallucination rate 4.1% (down from 5.5% with original gate) ✓, latency 46.5 s/item ✓, one-command bring-up verified ✓.
 
 ## 15. Key risks and mitigations
 
