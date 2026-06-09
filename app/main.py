@@ -27,10 +27,6 @@ async def lifespan(app: FastAPI):
     configure_langsmith()  # enable tracing if a LANGSMITH_API_KEY is set (3.7); else a no-op
     async with checkpointer_cm() as checkpointer:
         await init_db(checkpointer)
-        # Zombie sweep: the previous API process may have died with runs in flight
-        # (deploy, OOM, dev rebuild). Promote those rows to `failed` so the UI shows an
-        # honest terminal state instead of stuck-in-progress forever. Runs *after*
-        # init_db (schema must exist) and *before* yield (before serving requests).
         mark_abandoned_sessions()
         app.state.checkpointer = checkpointer
         yield
