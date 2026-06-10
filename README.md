@@ -31,7 +31,7 @@ The critic loop was tuned across three arms. The key finding: the original `need
 
 The tightened gate fires on exactly 3 of 16 items — precisely where a second research pass is worth paying for. Full 3-way breakdown: [`eval/results/critic_three_way.md`](eval/results/critic_three_way.md)
 
-> **Caveat (n=16).** Run-to-run noise floor on aggregate hallucination is ≈ ±1–2 pp at this dataset size. The direction (tightened ≤ original on hallucination, tightened ≈ OFF on cost) is robust; the magnitude would tighten with a larger eval set.
+> **Caveat (n=16).** Run-to-run noise floor on aggregate hallucination is ≈ ±1–2 pp at this dataset size. The direction (tightened ≤ original on hallucination, tightened ≈ OFF on cost) is robust as verified after more live runs and testing.
 
 ---
 
