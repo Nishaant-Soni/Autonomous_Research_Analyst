@@ -219,10 +219,14 @@ RUN_DB_TESTS=1 RUN_MODEL_TESTS=1 RUN_WEB_TESTS=1 RUN_LLM_TESTS=1 pytest -q
 | `RUN_WEB_TESTS=1` | Live Tavily web-search test (needs `TAVILY_API_KEY`) |
 | `RUN_LLM_TESTS=1` | Live LLM call via Planner (needs `OPENAI_API_KEY`) |
 
-Frontend type-check:
+Frontend checks:
 
 ```bash
-cd frontend && npm run typecheck     # tsc -b --noEmit, must be clean
+cd frontend
+npm run typecheck   # tsc --noEmit, must be clean
+npm run lint        # ESLint (typescript-eslint + react-hooks)
+npm run test        # vitest unit tests (time helper + api layer)
+npm run build       # production bundle
 ```
 
 ---
