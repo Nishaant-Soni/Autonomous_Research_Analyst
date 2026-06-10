@@ -60,5 +60,5 @@ would tighten with a larger / harder eval set.
 
 ## Files referenced
 
-- Per-arm reports: `eval/results/20260608T142303Z.md` (original), `eval/results/20260608T145138Z.md` (OFF), `eval/results/20260608T152024Z.md` (tightened).
+- Per-arm reports: `eval/results/golden_dataset_eval.md` (original), `eval/results/20260608T145138Z.md` (OFF), `eval/results/20260608T152024Z.md` (tightened).
 - Pairwise A/Bs: `critic_loop_AB.md` (original vs OFF), `critic_tightened_vs_off.md`, `critic_tightened_vs_original.md`.
