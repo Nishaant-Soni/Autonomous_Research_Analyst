@@ -225,6 +225,8 @@ export function ResearchPanel({ sessionId }: Props) {
 
   // Reset state and open a fresh EventSource whenever sessionId changes.
   useEffect(() => {
+    // React 18 batches all of these into a single re-render.
+    /* eslint-disable react-hooks/set-state-in-effect */
     setStatus("planning");
     setStreamError(null);
     setReportMd(null);
@@ -233,6 +235,7 @@ export function ResearchPanel({ sessionId }: Props) {
     setEvidence([]);
     setReportLoading(false);
     setHighlightN(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
     itemRefs.current = [];
 
     let terminalReceived = false;
