@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { setAuthFailureCallback } from "../lib/authFetch";
+import { authFetch, setAuthFailureCallback } from "../lib/authFetch";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
@@ -26,7 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthFailureCallback(() => setUser(null));
 
     // Rehydrate auth state from httpOnly cookie without re-prompting the user.
-    fetch(`${API_URL}/auth/me`, { credentials: "include" })
+    authFetch(`${API_URL}/auth/me`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { user_id: number; email: string } | null) => {
         if (data) setUser({ id: data.user_id, email: data.email });
