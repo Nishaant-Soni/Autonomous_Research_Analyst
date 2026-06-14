@@ -27,6 +27,39 @@ class Base(DeclarativeBase):
     pass
 
 
+# ── Phase 6: auth models ──────────────────────────────────────────────────────
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    hashed_pw: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    jti: Mapped[str] = mapped_column(Text, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    used: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+
+
+# ── Core models ───────────────────────────────────────────────────────────────
+
+
 class Document(Base):
     __tablename__ = "documents"
 
@@ -38,6 +71,10 @@ class Document(Base):
     doc_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+    # Nullable: pre-auth rows have no owner (plan 6.1).
+    user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE")
     )
 
 
@@ -71,6 +108,10 @@ class ResearchSession(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Nullable: pre-auth rows have no owner (plan 6.1).
+    user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE")
+    )
 
 
 class Evidence(Base):

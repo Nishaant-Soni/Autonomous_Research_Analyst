@@ -70,3 +70,31 @@ ALTER TABLE reports ADD COLUMN IF NOT EXISTS hallucination_rate DOUBLE PRECISION
 -- the normalized embeddings produced in app/embeddings.py.
 CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw
     ON chunks USING hnsw (embedding vector_cosine_ops);
+
+-- Phase 6: Authentication (plan 6.1).
+-- `users` and `refresh_tokens` are new tables — CREATE IF NOT EXISTS is fully idempotent.
+-- `documents` and `research_sessions` get a nullable `user_id` FK via ALTER (§3.2 pattern).
+CREATE TABLE IF NOT EXISTS users (
+    id         SERIAL PRIMARY KEY,
+    email      TEXT NOT NULL UNIQUE,
+    hashed_pw  TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    jti        TEXT PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    issued_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    used       BOOLEAN NOT NULL DEFAULT false
+);
+
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+
+-- Nullable because pre-auth rows have no owner; NOT NULL + DEFAULT would silently diverge
+-- on an empty-vs-populated volume (see plan §3.2 caveat).
+ALTER TABLE documents         ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE research_sessions ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS idx_documents_user_id         ON documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_research_sessions_user_id ON research_sessions(user_id);

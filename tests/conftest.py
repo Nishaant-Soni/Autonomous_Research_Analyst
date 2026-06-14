@@ -28,7 +28,7 @@ def _clean_db():
 
         with engine.begin() as conn:
             conn.exec_driver_sql(
-                "TRUNCATE documents, chunks, research_sessions, evidence, reports "
-                "RESTART IDENTITY CASCADE"
+                "TRUNCATE users, refresh_tokens, documents, chunks, "
+                "research_sessions, evidence, reports RESTART IDENTITY CASCADE"
             )
     yield

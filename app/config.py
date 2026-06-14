@@ -18,5 +18,13 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 120.0
     llm_max_retries: int = 2
 
+    # Phase 6: auth (plan 6.2). jwt_secret defaults to "" so existing tests that don't
+    # set JWT_SECRET still import cleanly; auth endpoints raise clearly at call time if empty.
+    jwt_secret: str = ""
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 7
+    # False for local http://localhost dev — Secure cookies are dropped by browsers on non-HTTPS.
+    cookie_secure: bool = False
+
 
 settings = Settings()
