@@ -9,12 +9,6 @@ from app.api.research import router as research_router
 from app.db.init_db import checkpointer_cm, init_db, mark_abandoned_sessions
 from app.observability import configure_langsmith
 
-# Phase 5 (Group A): the React app makes cross-origin XHR + EventSource calls. Scope CORS
-# to local dev origins; keep `allow_origins=["*"]` off — the API already takes untrusted
-# web content from Tavily inside Researcher, and tightening the browser-side surface is
-# cheap. The regex covers localhost/127.0.0.1 on any port (Vite occasionally moves to
-# 5174 when 5173 is busy; a second concurrent dev instance is the most common
-# foot-gun this catches).
 _CORS_ALLOW_ORIGIN_REGEX = r"^http://(localhost|127\.0\.0\.1)(:\d+)?$"
 
 
