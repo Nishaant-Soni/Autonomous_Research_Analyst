@@ -4,6 +4,8 @@
 // browser-facing URL (http://localhost:8000), NOT the internal Docker hostname, because
 // the *browser* makes the request — not the frontend container.
 
+import { authFetch } from "./authFetch";
+
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 class ApiError extends Error {
@@ -25,7 +27,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (init?.body != null && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
-  const res = await fetch(`${API_URL}${path}`, { ...init, headers });
+  const res = await authFetch(`${API_URL}${path}`, { ...init, headers });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new ApiError(res.status, body || res.statusText);
@@ -78,7 +80,7 @@ export async function postDocument(args: {
 export async function postDocumentFile(file: File): Promise<DocumentResponse> {
   const body = new FormData();
   body.append("file", file);
-  const res = await fetch(`${API_URL}/documents/upload`, { method: "POST", body });
+  const res = await authFetch(`${API_URL}/documents/upload`, { method: "POST", body });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new ApiError(res.status, text || res.statusText);

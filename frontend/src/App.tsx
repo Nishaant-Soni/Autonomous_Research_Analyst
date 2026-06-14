@@ -4,10 +4,17 @@ import { HealthBadge } from "./components/HealthBadge";
 import { QuestionForm } from "./components/QuestionForm";
 import { ResearchPanel } from "./components/ResearchPanel";
 import { RunHistory } from "./components/RunHistory";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import { LoginPage } from "./pages/LoginPage";
 
-export default function App() {
+function AppInner() {
+  const { user, loading, logout } = useAuth();
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+
+  // Avoid flashing the login page while the /auth/me check is in flight.
+  if (loading) return null;
+  if (!user) return <LoginPage />;
 
   function handleSubmitted(id: number) {
     setSelectedSessionId(id);
@@ -35,7 +42,16 @@ export default function App() {
               </p>
             </div>
           </div>
-          <HealthBadge />
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-slate-400">{user.email}</span>
+            <button
+              onClick={() => void logout()}
+              className="rounded-md px-2.5 py-1 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+            >
+              Sign out
+            </button>
+            <HealthBadge />
+          </div>
         </div>
       </header>
 
@@ -65,5 +81,13 @@ export default function App() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
   );
 }

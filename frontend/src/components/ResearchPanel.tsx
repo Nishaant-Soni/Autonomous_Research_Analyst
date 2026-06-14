@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getEvidence, getResearch, openResearchStream, type EvidenceItem } from "../lib/api";
+import { refreshTokens } from "../lib/authFetch";
 
 // ── Pipeline stages (order matters for the timeline) ──────────────────────────
 
@@ -222,6 +223,7 @@ export function ResearchPanel({ sessionId }: Props) {
   const [reportLoading, setReportLoading] = useState(false);
   const [highlightN, setHighlightN] = useState<number | null>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const esRef = useRef<EventSource | null>(null);
 
   // Reset state and open a fresh EventSource whenever sessionId changes.
   useEffect(() => {
@@ -240,51 +242,67 @@ export function ResearchPanel({ sessionId }: Props) {
 
     let terminalReceived = false;
     let cancelled = false;
-    const es = openResearchStream(sessionId);
+    let reconnectAttempted = false;
 
-    es.onmessage = (e: MessageEvent) => {
-      if (cancelled) return;
-      const data = JSON.parse(e.data as string) as {
-        status: string;
-        error?: string;
-      };
-      setStatus(data.status);
+    function connect() {
+      const es = openResearchStream(sessionId);
+      esRef.current = es;
 
-      if (TERMINAL.has(data.status)) {
-        terminalReceived = true;
-        es.close();
+      es.onmessage = (e: MessageEvent) => {
+        if (cancelled) return;
+        const data = JSON.parse(e.data as string) as {
+          status: string;
+          error?: string;
+        };
+        setStatus(data.status);
 
-        if (data.status === "failed") {
-          setStreamError(data.error ?? "Run failed");
-          return;
+        if (TERMINAL.has(data.status)) {
+          terminalReceived = true;
+          es.close();
+
+          if (data.status === "failed") {
+            setStreamError(data.error ?? "Run failed");
+            return;
+          }
+
+          // status === "done": fetch report + evidence
+          setReportLoading(true);
+          Promise.all([getResearch(sessionId), getEvidence(sessionId)])
+            .then(([res, evs]) => {
+              if (cancelled) return;
+              const md = res.report_md ?? null;
+              setReportMd(md);
+              setCitationsValid(res.citations_valid ?? null);
+              setLowConfidence(res.low_confidence ?? null);
+              setEvidence(md ? buildCitedEvidence(md, evs) : evs);
+            })
+            .catch(() => { if (!cancelled) setStreamError("Failed to load report"); })
+            .finally(() => { if (!cancelled) setReportLoading(false); });
         }
+      };
 
-        // status === "done": fetch report + evidence
-        setReportLoading(true);
-        Promise.all([getResearch(sessionId), getEvidence(sessionId)])
-          .then(([res, evs]) => {
-            if (cancelled) return;
-            const md = res.report_md ?? null;
-            setReportMd(md);
-            setCitationsValid(res.citations_valid ?? null);
-            setLowConfidence(res.low_confidence ?? null);
-            setEvidence(md ? buildCitedEvidence(md, evs) : evs);
-          })
-          .catch(() => { if (!cancelled) setStreamError("Failed to load report"); })
-          .finally(() => { if (!cancelled) setReportLoading(false); });
-      }
-    };
+      es.onerror = () => {
+        if (cancelled) return;
+        es.close();
+        if (!terminalReceived && !reconnectAttempted) {
+          // Access token may have expired — try refreshing then reconnecting once.
+          reconnectAttempted = true;
+          refreshTokens().then((ok) => {
+            if (ok && !cancelled) connect();
+            else if (!cancelled) setStreamError("Stream connection lost");
+          });
+        } else if (!terminalReceived) {
+          setStreamError("Stream connection lost");
+        }
+      };
+    }
 
-    es.onerror = () => {
-      if (!terminalReceived && !cancelled) {
-        setStreamError("Stream connection lost");
-      }
-      es.close();
-    };
+    connect();
 
     return () => {
       cancelled = true;
-      es.close();
+      esRef.current?.close();
+      esRef.current = null;
     };
   }, [sessionId]);
 
