@@ -83,3 +83,6 @@ class ResearchState(TypedDict):
     citations_valid: bool
     low_confidence: bool
     stripped_fraction: float
+    user_id: (
+        int | None
+    )  # owning user; None for eval/anonymous runs (no RAG filter applied)

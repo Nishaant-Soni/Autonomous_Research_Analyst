@@ -46,7 +46,7 @@ def test_ingest_document_creates_doc_and_chunks():
 
 
 # No DB or model needed: empty text is rejected by pydantic (422) before any work.
-def test_ingest_rejects_empty_text():
+def test_ingest_rejects_empty_text(override_auth):
     from fastapi.testclient import TestClient
 
     from app.main import app

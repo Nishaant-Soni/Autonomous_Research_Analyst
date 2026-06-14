@@ -11,8 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.progress import create_queue, get_queue, remove_queue
+from app.auth.dependencies import get_current_user
 from app.db.models import Evidence as EvidenceRow
-from app.db.models import Report, ResearchSession
+from app.db.models import Report, ResearchSession, User
 from app.db.session import SessionLocal, get_db
 from app.graph.runner import run_research
 
@@ -31,17 +32,23 @@ class ResearchOut(BaseModel):
     session_id: int
 
 
-async def _run_and_cleanup(session_id, question, checkpointer, queue) -> None:
+async def _run_and_cleanup(session_id, question, checkpointer, queue, user_id) -> None:
     try:
-        await run_research(session_id, question, checkpointer, queue)
+        await run_research(session_id, question, checkpointer, queue, user_id=user_id)
     finally:
         remove_queue(session_id)
 
 
 @router.post("/research", response_model=ResearchOut, status_code=202)
-async def start_research(body: ResearchIn, request: Request) -> ResearchOut:
+async def start_research(
+    body: ResearchIn,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> ResearchOut:
     with SessionLocal() as db:
-        session = ResearchSession(question=body.question, status="planning")
+        session = ResearchSession(
+            question=body.question, status="planning", user_id=current_user.id
+        )
         db.add(session)
         db.commit()
         session_id = session.id
@@ -49,7 +56,11 @@ async def start_research(body: ResearchIn, request: Request) -> ResearchOut:
     queue = create_queue(session_id)
     task = asyncio.create_task(
         _run_and_cleanup(
-            session_id, body.question, request.app.state.checkpointer, queue
+            session_id,
+            body.question,
+            request.app.state.checkpointer,
+            queue,
+            user_id=current_user.id,
         )
     )
     _background_tasks.add(task)
@@ -78,13 +89,15 @@ _LIST_LIMIT_DEFAULT = 20
 def list_research(
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[ResearchSummaryOut]:
-    """Recent runs, newest first. Used by the React sidebar to let a reviewer flip between
-    questions. v1 portfolio scale is tens of rows; cursor pagination is overkill — keep
-    plain `?limit=N`. Clamp protects against accidental large queries."""
+    """Recent runs for the current user, newest first."""
     sessions = (
         db.execute(
-            select(ResearchSession).order_by(ResearchSession.id.desc()).limit(limit)
+            select(ResearchSession)
+            .where(ResearchSession.user_id == current_user.id)
+            .order_by(ResearchSession.id.desc())
+            .limit(limit)
         )
         .scalars()
         .all()
@@ -115,10 +128,14 @@ class ResearchStatusOut(BaseModel):
 
 
 @router.get("/research/{session_id}", response_model=ResearchStatusOut)
-def get_research(session_id: int, db: Session = Depends(get_db)) -> ResearchStatusOut:
+def get_research(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ResearchStatusOut:
     """Poll a run's status; once `done`, also return the report + citation validity (3.3)."""
     session = db.get(ResearchSession, session_id)
-    if session is None:
+    if session is None or session.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="session not found")
 
     report = None
@@ -151,11 +168,15 @@ class EvidenceOut(BaseModel):
 
 
 @router.get("/research/{session_id}/evidence", response_model=list[EvidenceOut])
-def get_evidence(session_id: int, db: Session = Depends(get_db)) -> list[EvidenceOut]:
+def get_evidence(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[EvidenceOut]:
     """Return the structured evidence persisted for a session (3.4). Empty until the run
     completes (evidence is written on success)."""
     session = db.get(ResearchSession, session_id)
-    if session is None:
+    if session is None or session.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="session not found")
 
     rows = (
@@ -181,10 +202,17 @@ def _sse(payload: dict) -> str:
 
 
 @router.get("/research/{session_id}/stream")
-async def stream_research(session_id: int) -> StreamingResponse:
-    """SSE per-agent progress (3.5). Drains the session's in-process queue, emitting each
-    per-node event until the run's `None` sentinel. A late/early subscriber with no live
-    queue (run already finished and cleaned up) gets the terminal DB status once."""
+async def stream_research(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """SSE per-agent progress (3.5). Ownership check runs first; then drains the live queue
+    or returns the terminal status from DB."""
+    session = db.get(ResearchSession, session_id)
+    if session is None or session.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="session not found")
+
     queue = get_queue(session_id)
     if queue is not None:
 
@@ -197,14 +225,8 @@ async def stream_research(session_id: int) -> StreamingResponse:
 
         return StreamingResponse(_drain(), media_type="text/event-stream")
 
-    # No live queue: the run already finished (and its queue was removed), or never existed.
-    with SessionLocal() as db:
-        session = db.get(ResearchSession, session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    status = session.status
-
+    # No live queue: run already finished (queue removed) or never existed.
     async def _terminal():
-        yield _sse({"status": status})
+        yield _sse({"status": session.status})
 
     return StreamingResponse(_terminal(), media_type="text/event-stream")

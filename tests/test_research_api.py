@@ -14,14 +14,14 @@ requires_db = pytest.mark.skipif(
 )
 
 
-def test_empty_question_is_rejected():
+def test_empty_question_is_rejected(override_auth):
     # Validation fires before the handler body, so no DB/checkpointer is touched.
     client = TestClient(app)
     resp = client.post("/research", json={"question": ""})
     assert resp.status_code == 422
 
 
-def test_list_research_clamps_limit_at_validation_layer():
+def test_list_research_clamps_limit_at_validation_layer(override_auth):
     """Validation: limit > max returns 422 (Pydantic Query constraint) — no DB needed.
     Belongs alongside the empty-question test as a pure schema check."""
     client = TestClient(app)
@@ -29,17 +29,25 @@ def test_list_research_clamps_limit_at_validation_layer():
     assert resp.status_code == 422
 
 
-def test_list_research_rejects_zero_or_negative_limit():
+def test_list_research_rejects_zero_or_negative_limit(override_auth):
     client = TestClient(app)
     assert client.get("/research", params={"limit": 0}).status_code == 422
     assert client.get("/research", params={"limit": -5}).status_code == 422
 
 
-def test_stream_drains_queue_events():
-    # The drain path reads only the in-process queue (no DB): seed it, then stream it out.
+@requires_db
+def test_stream_drains_queue_events(override_auth):
     from app.api.progress import create_queue, remove_queue
+    from app.db.models import ResearchSession
+    from app.db.session import SessionLocal
+    from tests.conftest import FAKE_USER_ID
 
-    session_id = 987654
+    with SessionLocal() as db:
+        session = ResearchSession(question="Q", status="planning", user_id=FAKE_USER_ID)
+        db.add(session)
+        db.commit()
+        session_id = session.id
+
     queue = create_queue(session_id)
     queue.put_nowait({"node": "planner", "status": "planning"})
     queue.put_nowait({"status": "done"})
@@ -55,7 +63,7 @@ def test_stream_drains_queue_events():
 
 
 @requires_db
-def test_start_research_returns_id_and_creates_session(monkeypatch):
+def test_start_research_returns_id_and_creates_session(monkeypatch, override_auth):
     # Stub the runner so the background task doesn't run the real graph.
     import app.api.research as research
 
@@ -83,18 +91,21 @@ def test_start_research_returns_id_and_creates_session(monkeypatch):
 
 
 @requires_db
-def test_get_research_missing_returns_404():
+def test_get_research_missing_returns_404(override_auth):
     client = TestClient(app)
     assert client.get("/research/999999").status_code == 404
 
 
 @requires_db
-def test_get_research_before_and_after_completion():
+def test_get_research_before_and_after_completion(override_auth):
     from app.db.models import Report, ResearchSession
     from app.db.session import SessionLocal
+    from tests.conftest import FAKE_USER_ID
 
     with SessionLocal() as db:
-        session = ResearchSession(question="Q", status="researching")
+        session = ResearchSession(
+            question="Q", status="researching", user_id=FAKE_USER_ID
+        )
         db.add(session)
         db.commit()
         session_id = session.id
@@ -125,11 +136,12 @@ def test_get_research_before_and_after_completion():
 
 
 @requires_db
-def test_get_evidence_returns_web_and_rag_items():
+def test_get_evidence_returns_web_and_rag_items(override_auth):
     from app.db.models import Chunk, Document
     from app.db.models import Evidence as EvidenceRow
     from app.db.models import ResearchSession
     from app.db.session import SessionLocal
+    from tests.conftest import FAKE_USER_ID
 
     with SessionLocal() as db:
         # A rag evidence item references a real chunk (FK), so seed a document + chunk.
@@ -141,7 +153,7 @@ def test_get_evidence_returns_web_and_rag_items():
         db.flush()
         chunk_id = chunk.id
 
-        session = ResearchSession(question="Q", status="done")
+        session = ResearchSession(question="Q", status="done", user_id=FAKE_USER_ID)
         db.add(session)
         db.flush()
         session_id = session.id
@@ -173,11 +185,12 @@ def test_get_evidence_returns_web_and_rag_items():
 
 
 @requires_db
-def test_list_research_returns_recent_first_with_summary_shape():
+def test_list_research_returns_recent_first_with_summary_shape(override_auth):
     """Plan 5.7: the sidebar query. Three sessions inserted in order; the list returns them
     newest-first, with the slim summary shape (no report_md / citations_valid)."""
     from app.db.models import ResearchSession
     from app.db.session import SessionLocal
+    from tests.conftest import FAKE_USER_ID
 
     with SessionLocal() as db:
         for q, status in [
@@ -185,7 +198,7 @@ def test_list_research_returns_recent_first_with_summary_shape():
             ("second question", "researching"),
             ("third question", "planning"),
         ]:
-            db.add(ResearchSession(question=q, status=status))
+            db.add(ResearchSession(question=q, status=status, user_id=FAKE_USER_ID))
         db.commit()
 
     client = TestClient(app)
@@ -205,13 +218,16 @@ def test_list_research_returns_recent_first_with_summary_shape():
 
 
 @requires_db
-def test_list_research_honors_explicit_limit():
+def test_list_research_honors_explicit_limit(override_auth):
     from app.db.models import ResearchSession
     from app.db.session import SessionLocal
+    from tests.conftest import FAKE_USER_ID
 
     with SessionLocal() as db:
         for i in range(5):
-            db.add(ResearchSession(question=f"q{i}", status="done"))
+            db.add(
+                ResearchSession(question=f"q{i}", status="done", user_id=FAKE_USER_ID)
+            )
         db.commit()
 
     client = TestClient(app)
@@ -222,7 +238,7 @@ def test_list_research_honors_explicit_limit():
 
 
 @requires_db
-def test_list_research_empty_set_returns_empty_list():
+def test_list_research_empty_set_returns_empty_list(override_auth):
     client = TestClient(app)
     resp = client.get("/research")
     assert resp.status_code == 200
@@ -230,12 +246,13 @@ def test_list_research_empty_set_returns_empty_list():
 
 
 @requires_db
-def test_stream_falls_back_to_status_when_no_queue():
+def test_stream_falls_back_to_status_when_no_queue(override_auth):
     from app.db.models import ResearchSession
     from app.db.session import SessionLocal
+    from tests.conftest import FAKE_USER_ID
 
     with SessionLocal() as db:
-        session = ResearchSession(question="Q", status="done")
+        session = ResearchSession(question="Q", status="done", user_id=FAKE_USER_ID)
         db.add(session)
         db.commit()
         session_id = session.id
@@ -247,6 +264,6 @@ def test_stream_falls_back_to_status_when_no_queue():
 
 
 @requires_db
-def test_stream_missing_session_returns_404():
+def test_stream_missing_session_returns_404(override_auth):
     client = TestClient(app)
     assert client.get("/research/999999/stream").status_code == 404

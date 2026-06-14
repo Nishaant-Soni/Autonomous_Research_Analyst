@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import get_current_user
 from app.auth.utils import (
     create_access_token,
     create_refresh_token,
@@ -141,18 +142,6 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)) 
 
 
 @router.get("/me", response_model=UserOut)
-def get_me(request: Request, db: Session = Depends(get_db)) -> UserOut:
+def get_me(current_user: User = Depends(get_current_user)) -> UserOut:
     """Lightweight 'am I logged in?' — used by React to rehydrate auth state on page load."""
-    token = request.cookies.get("access_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    try:
-        payload = decode_token(token)
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    if payload.get("typ") != "access":
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    user = db.get(User, int(payload["sub"]))
-    if user is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return UserOut(user_id=user.id, email=user.email)
+    return UserOut(user_id=current_user.id, email=current_user.email)

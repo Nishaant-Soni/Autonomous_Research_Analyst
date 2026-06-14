@@ -38,14 +38,19 @@ _NODE_STATUS = {
 
 
 def build_initial_state(
-    session_id: str, question: str, max_iterations: int | None = None
+    session_id: str,
+    question: str,
+    max_iterations: int | None = None,
+    user_id: int | None = None,
 ) -> dict:
     """Initial `ResearchState` for a new run. Public so the eval harness can build the same
     state without going through `run_research` (which writes a DB session row).
 
     `max_iterations` overrides `settings.max_iterations` per call — set to `0` to disable
     the critic loop-back (the critic node still runs but the conditional edge never
-    routes back to the researcher). Used by the C2 critic-loop A/B (plan 4.7)."""
+    routes back to the researcher). Used by the C2 critic-loop A/B (plan 4.7).
+
+    `user_id` scopes RAG retrieval to that user's documents; None means no filter (eval/anon)."""
     return {
         "session_id": session_id,
         "question": question,
@@ -61,6 +66,7 @@ def build_initial_state(
         "citations_valid": False,
         "low_confidence": False,
         "stripped_fraction": 0.0,
+        "user_id": user_id,
     }
 
 
@@ -134,7 +140,9 @@ def _schedule_scoring(
     task.add_done_callback(_scoring_tasks.discard)
 
 
-async def run_research(session_id, question, checkpointer, queue=None) -> dict | None:
+async def run_research(
+    session_id, question, checkpointer, queue=None, user_id: int | None = None
+) -> dict | None:
     """Run the graph for an already-created session. Returns the final state, or `None` on
     failure — the failure is recorded on the session row (status `failed` + error), not
     raised, because this runs as a fire-and-forget task."""
@@ -142,7 +150,9 @@ async def run_research(session_id, question, checkpointer, queue=None) -> dict |
     config = {"configurable": {"thread_id": str(session_id)}}
     try:
         async for ev in graph.astream_events(
-            build_initial_state(str(session_id), question), config, version="v2"
+            build_initial_state(str(session_id), question, user_id=user_id),
+            config,
+            version="v2",
         ):
             if ev["event"] == "on_chain_start":
                 status = _NODE_STATUS.get(ev.get("name"))

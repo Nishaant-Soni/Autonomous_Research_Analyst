@@ -115,7 +115,7 @@ export async function getEvidence(sessionId: number): Promise<EvidenceItem[]> {
 }
 
 export function openResearchStream(sessionId: number): EventSource {
-  return new EventSource(`${API_URL}/research/${sessionId}/stream`);
+  return new EventSource(`${API_URL}/research/${sessionId}/stream`, { withCredentials: true });
 }
 
 export { ApiError };

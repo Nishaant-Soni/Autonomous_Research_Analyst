@@ -15,6 +15,7 @@ def ingest_document(
     title: str | None = None,
     source_uri: str | None = None,
     doc_metadata: dict | None = None,
+    user_id: int | None = None,
 ) -> tuple[int, int]:
     """Chunk + embed `raw_text` and persist a Document with its Chunks. Caller owns the
     transaction (we flush to assign the document id, but commit is the caller's call).
@@ -24,6 +25,7 @@ def ingest_document(
         title=title,
         source_uri=source_uri,
         doc_metadata=doc_metadata,
+        user_id=user_id,
     )
     db.add(document)
     db.flush()  # assigns document.id without committing

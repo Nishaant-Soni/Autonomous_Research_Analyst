@@ -39,6 +39,7 @@ app.add_middleware(
     allow_origin_regex=_CORS_ALLOW_ORIGIN_REGEX,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"],
+    allow_credentials=True,
 )
 app.include_router(auth_router)
 app.include_router(documents_router)

@@ -46,7 +46,7 @@ def recorded_retrievers(monkeypatch):
             )
         ]
 
-    def fake_rag(query, k=5):
+    def fake_rag(query, k=5, user_id=None):
         queries.append(("rag", query))
         return [Evidence(content=f"rag:{query}", retriever="rag", source_chunk_id=1)]
 
@@ -125,7 +125,7 @@ def test_run_researcher_live(monkeypatch):
             )
         ],
     )
-    monkeypatch.setattr(researcher, "rag_retrieve", lambda q, k=5: [])
+    monkeypatch.setattr(researcher, "rag_retrieve", lambda q, k=5, user_id=None: [])
 
     result = researcher.run_researcher(
         "What are the benefits of on-device LLM inference?", ["latency", "privacy"]

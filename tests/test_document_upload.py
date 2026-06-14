@@ -16,7 +16,7 @@ import pytest
 # --- non-DB / non-model tests ---------------------------------------------------------
 
 
-def test_rejects_unsupported_extension():
+def test_rejects_unsupported_extension(override_auth):
     from fastapi.testclient import TestClient
 
     from app.main import app
@@ -31,7 +31,7 @@ def test_rejects_unsupported_extension():
     assert "unsupported" in resp.json()["detail"].lower()
 
 
-def test_rejects_oversize_upload():
+def test_rejects_oversize_upload(override_auth):
     from fastapi.testclient import TestClient
 
     from app.main import app
@@ -48,7 +48,7 @@ def test_rejects_oversize_upload():
     assert "too large" in resp.json()["detail"].lower()
 
 
-def test_rejects_empty_text_file():
+def test_rejects_empty_text_file(override_auth):
     from fastapi.testclient import TestClient
 
     from app.main import app

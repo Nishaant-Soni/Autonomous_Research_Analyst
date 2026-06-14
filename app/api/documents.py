@@ -13,6 +13,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import get_current_user
+from app.db.models import User
 from app.db.session import get_db
 from app.ingest.store import ingest_document
 
@@ -38,7 +40,9 @@ class DocumentOut(BaseModel):
 
 @router.post("/documents", response_model=DocumentOut)
 def ingest_document_endpoint(
-    doc: DocumentIn, db: Session = Depends(get_db)
+    doc: DocumentIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> DocumentOut:
     document_id, chunks = ingest_document(
         db,
@@ -46,6 +50,7 @@ def ingest_document_endpoint(
         title=doc.title,
         source_uri=doc.source_uri,
         doc_metadata=doc.metadata,
+        user_id=current_user.id,
     )
     db.commit()
     return DocumentOut(document_id=document_id, chunks=chunks)
@@ -71,6 +76,7 @@ def _extract_text(filename: str, data: bytes) -> str:
 async def ingest_document_upload(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> DocumentOut:
     filename = file.filename or "upload"
     ext = PurePosixPath(filename).suffix.lower()
@@ -99,6 +105,7 @@ async def ingest_document_upload(
         title=filename,
         source_uri=f"upload:{filename}",
         doc_metadata={"upload": True, "ext": ext, "size_bytes": len(data)},
+        user_id=current_user.id,
     )
     db.commit()
     return DocumentOut(document_id=document_id, chunks=chunks)

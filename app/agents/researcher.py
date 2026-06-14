@@ -67,12 +67,12 @@ _TOOLS: list[dict[str, Any]] = [
 ]
 
 
-def _dispatch(name: str, query: str) -> list[Evidence]:
+def _dispatch(name: str, query: str, user_id: int | None = None) -> list[Evidence]:
     # Looked up by name (not a module-level dict) so tests can monkeypatch the retrievers.
     if name == "web_search":
         return web_search(query)
     if name == "rag_retrieve":
-        return rag_retrieve(query)
+        return rag_retrieve(query, user_id=user_id)
     return []
 
 
@@ -121,6 +121,7 @@ def run_researcher(
     critique: Critique | None = None,
     provider: LLMProvider | None = None,
     max_rounds: int = 6,
+    user_id: int | None = None,
 ) -> dict:
     """Run the tool-using loop. Returns `{"evidence": <new>, "draft_findings": <prose>}`."""
     provider = provider or get_default_provider()
@@ -138,7 +139,7 @@ def run_researcher(
         if not calls:
             return {"evidence": gathered, "draft_findings": response.output_text}
         for call in calls:
-            results = _dispatch(call.name, _query_of(call))
+            results = _dispatch(call.name, _query_of(call), user_id=user_id)
             gathered.extend(results)
             conversation.append(
                 {
@@ -163,4 +164,9 @@ def run_researcher(
 
 def researcher_node(state: ResearchState) -> dict:
     """Graph node: gather evidence + draft findings for the question/plan (and any critique)."""
-    return run_researcher(state["question"], state["plan"], state.get("critique"))
+    return run_researcher(
+        state["question"],
+        state["plan"],
+        state.get("critique"),
+        user_id=state.get("user_id"),
+    )
