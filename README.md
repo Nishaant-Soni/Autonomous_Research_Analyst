@@ -42,7 +42,8 @@ flowchart TD
     UI["React UI\nVite · TypeScript · Tailwind"]
 
     subgraph backend["FastAPI Backend · Python 3.11"]
-        API["REST + SSE Endpoints"]
+        AUTH["Auth · httpOnly JWT cookies\nPOST /auth/login · /refresh · /logout"]
+        API["REST + SSE Endpoints\nJWT-protected"]
 
         subgraph graph["LangGraph StateGraph · bounded critic loop"]
             direction LR
@@ -57,7 +58,7 @@ flowchart TD
             CR --> WR --> CV
         end
 
-        API --> PL
+        AUTH --> API --> PL
     end
 
     subgraph datalayer["Data Layer"]
@@ -67,11 +68,13 @@ flowchart TD
         LS["LangSmith\n(optional)"]
     end
 
+    UI <-->|"httpOnly JWT cookies"| AUTH
     UI <-->|"POST /research · GET /stream SSE"| API
-    RS -->|"RAG similarity search"| DB
+    RS -->|"RAG (per-user scoped)"| DB
     RS -->|"live web search"| WEB
     API -. "checkpoints" .-> DB
     CV -- "reports & evidence" --> DB
+    AUTH -. "users · refresh_tokens" .-> DB
     backend -. "traces" .-> LS
 ```
 
@@ -92,30 +95,27 @@ flowchart TD
 Requires Docker and a `.env` file with your keys (copy from `.env.example`):
 
 ```bash
-cp .env.example .env          # add OPENAI_API_KEY and TAVILY_API_KEY
+cp .env.example .env          # fill in OPENAI_API_KEY, TAVILY_API_KEY, and JWT_SECRET
 docker compose up --build
 ```
 
-That's it. Three services start:
+`JWT_SECRET` is required — generate one with:
+
+```bash
+python -c 'import secrets; print(secrets.token_urlsafe(64))'
+```
+
+Three services start:
 
 | Service | URL | Purpose |
 |---|---|---|
-| **React UI** | http://localhost:5173 | Submit questions, stream progress, read cited reports |
+| **React UI** | http://localhost:5173 | Register/sign in, submit questions, stream progress, read cited reports |
 | **API** | http://localhost:8000 | FastAPI backend (Swagger at `/docs`) |
 | **DB** | localhost:5432 | PostgreSQL + pgvector (schema applied on first boot) |
 
 The API image has the embedding model (`BAAI/bge-small-en-v1.5`, 384-dim) baked in — no download on first run. The frontend container installs `node_modules` into a named volume on first boot (~30 s one-time cost).
 
-```bash
-# Ingest a reference document (the UI has a file picker too)
-curl -X POST localhost:8000/documents/upload -F "file=@notes.pdf"
-
-# Submit a question directly and get the session ID
-curl -s -X POST localhost:8000/research \
-  -H "Content-Type: application/json" \
-  -d '{"question": "What are the trade-offs between RAG and fine-tuning?"}' \
-  | jq .
-```
+Open `http://localhost:5173`, register an account, and submit a research question. All API endpoints except `/health` require a valid session cookie — use the UI for interactive access, or exercise the API directly via the Swagger docs at `http://localhost:8000/docs`.
 
 ---
 
@@ -131,21 +131,27 @@ curl -s -X POST localhost:8000/research \
 | **Eval harness** | ✅ | 16-item golden dataset, self-authored seed corpus, run/score/report pipeline; Ragas faithfulness + answer relevancy + context recall; LangSmith cost tracking |
 | **Critic tuning** | ✅ | 3-arm A/B; tightened gate cuts hallucination 5.5% → 4.1% at near-OFF cost |
 | **React UI** | ✅ | SSE-driven progress timeline, Markdown report, evidence inspector with citation-click-to-scroll, recent-runs sidebar |
+| **Authentication** | ✅ | JWT httpOnly cookies (access + refresh); rotation backed by `refresh_tokens` table; per-user data isolation (sessions, documents, RAG); React login/signup UI with transparent auto-refresh |
 
 ---
 
 ## HTTP endpoints
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/health` | Liveness check |
-| `POST` | `/documents` | Ingest raw text (JSON body) — chunk + embed + store |
-| `POST` | `/documents/upload` | Ingest a file (`.txt` / `.md` / `.pdf`, ≤ 5 MB) |
-| `POST` | `/research` | Start an async run; returns `session_id` immediately (202) |
-| `GET` | `/research?limit=N` | List recent runs — drives the sidebar |
-| `GET` | `/research/{id}` | Poll status; returns report + `citations_valid` + `low_confidence` once done |
-| `GET` | `/research/{id}/evidence` | Structured evidence for a session |
-| `GET` | `/research/{id}/stream` | SSE stream of per-agent progress |
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `GET` | `/health` | public | Liveness check |
+| `POST` | `/auth/register` | public | Register a new account |
+| `POST` | `/auth/login` | public | Sign in; sets httpOnly access + refresh cookies |
+| `POST` | `/auth/refresh` | cookie | Rotate tokens; issues a new cookie pair |
+| `POST` | `/auth/logout` | cookie | Clears cookies; revokes refresh token server-side |
+| `GET` | `/auth/me` | cookie | Return current user (used for page-refresh rehydration) |
+| `POST` | `/documents` | required | Ingest raw text (JSON body) — chunk + embed + store |
+| `POST` | `/documents/upload` | required | Ingest a file (`.txt` / `.md` / `.pdf`, ≤ 5 MB) |
+| `POST` | `/research` | required | Start an async run; returns `session_id` immediately (202) |
+| `GET` | `/research?limit=N` | required | List the authenticated user's recent runs |
+| `GET` | `/research/{id}` | required | Poll status; returns report + `citations_valid` + `low_confidence` once done |
+| `GET` | `/research/{id}/evidence` | required | Structured evidence for a session |
+| `GET` | `/research/{id}/stream` | required | SSE stream of per-agent progress |
 
 ---
 
@@ -157,7 +163,7 @@ Run the DB in Docker, the backend and frontend on the host for hot-reload:
 # ── Backend ──────────────────────────────────────────────────────────────────
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env                    # fill in OPENAI_API_KEY + TAVILY_API_KEY
+cp .env.example .env                    # fill in OPENAI_API_KEY, TAVILY_API_KEY, JWT_SECRET
 
 docker compose up -d db                 # Postgres + pgvector on localhost:5432
 uvicorn app.main:app --reload           # http://localhost:8000
@@ -255,4 +261,8 @@ All settings from environment variables / `.env` (see [`.env.example`](./.env.ex
 | `LLM_MAX_RETRIES` | `2` | LLM retries on transient errors |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Local sentence-transformer (384-dim) |
 | `MAX_ITERATIONS` | `2` | Hard cap on the critic loop-back |
+| `JWT_SECRET` | — | **Required.** Token signing key — generate with `python -c 'import secrets; print(secrets.token_urlsafe(64))'` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | Access token lifetime |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifetime |
+| `COOKIE_SECURE` | `false` | Set `true` in production (HTTPS only). Must be `false` for local `http://localhost` dev |
 | `VITE_API_URL` | `http://localhost:8000` | API base URL for the React app |
