@@ -1,21 +1,51 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+
 export function LoginPage() {
   const { login } = useAuth();
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  function switchMode(next: "signin" | "signup") {
+    setMode(next);
+    setError(null);
+    setConfirm("");
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (mode === "signup" && password !== confirm) {
+      setError("Passwords do not match");
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await login(email, password);
+      if (mode === "signup") {
+        const res = await fetch(`${API_URL}/auth/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({})) as { detail?: string };
+          throw new Error(body.detail ?? "Registration failed");
+        }
+        // Auto-login after successful registration.
+        await login(email, password);
+      } else {
+        await login(email, password);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setSubmitting(false);
     }
@@ -33,15 +63,33 @@ export function LoginPage() {
           </div>
           <div>
             <h1 className="text-sm font-semibold text-slate-900">Autonomous Research Analyst</h1>
-            <p className="text-[11px] text-slate-400">Sign in to continue</p>
+            <p className="text-[11px] text-slate-400">
+              {mode === "signin" ? "Sign in to continue" : "Create your account"}
+            </p>
           </div>
+        </div>
+
+        {/* Mode tabs */}
+        <div className="mb-5 flex rounded-lg bg-slate-100 p-0.5">
+          {(["signin", "signup"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => switchMode(m)}
+              className={`flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
+                mode === m
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {m === "signin" ? "Sign in" : "Sign up"}
+            </button>
+          ))}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-700">
-              Email
-            </label>
+            <label className="mb-1 block text-xs font-medium text-slate-700">Email</label>
             <input
               type="email"
               value={email}
@@ -54,9 +102,7 @@ export function LoginPage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-700">
-              Password
-            </label>
+            <label className="mb-1 block text-xs font-medium text-slate-700">Password</label>
             <input
               type="password"
               value={password}
@@ -67,10 +113,22 @@ export function LoginPage() {
             />
           </div>
 
+          {mode === "signup" && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-700">Confirm password</label>
+              <input
+                type="password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                required
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                placeholder="••••••••"
+              />
+            </div>
+          )}
+
           {error && (
-            <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600">
-              {error}
-            </p>
+            <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600">{error}</p>
           )}
 
           <button
@@ -84,14 +142,9 @@ export function LoginPage() {
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
             )}
-            Sign in
+            {mode === "signin" ? "Sign in" : "Create account"}
           </button>
         </form>
-
-        <p className="mt-5 text-center text-[10px] text-slate-400">
-          No account? Register via{" "}
-          <code className="rounded bg-slate-100 px-1 font-mono">POST /auth/register</code>
-        </p>
       </div>
     </div>
   );
