@@ -28,7 +28,7 @@ It demonstrates, in one project, the exact bundle of skills entry-level AI/ML en
 6. Ship as a containerized service with a clean API and a simple UI.
 
 ### 2.2 Non-goals (deliberately out of scope for v1)
-- Multi-tenant auth, user accounts, billing.
+- Multi-tenant auth, billing. *(Single-user JWT auth with per-user data isolation was added in Phase 6 to round out the full-stack story.)*
 - Fine-tuning or training models.
 - Real-time collaborative editing of reports.
 - Supporting every LLM provider simultaneously (one default, swappable — not a model marketplace).
@@ -237,7 +237,9 @@ LangSmith captures every agent's prompt, output, token usage, latency, and the f
 
 **Phase 4 — Evaluation (2–3 days).** Build the golden dataset, integrate Ragas, write the eval CLI and versioned results report. Tune prompts; record before/after metrics. Sub-task: A/B the two embedding models (`bge-small-en-v1.5` with query prefix vs. `all-MiniLM-L6-v2`) over the same golden set and pick based on context recall — both are 384-dim, so the swap needs no schema change. **Embedding A/B was deferred** — the 3-arm critic-loop A/B (original / OFF / tightened gate) was prioritised instead as it directly produced the headline hallucination improvement used in the README and interview story.
 
-**Phase 5 — UI + polish (2–3 days).** React (Vite + TS + Tailwind) app: submit question, watch the SSE progress stream live, read the report, inspect the evidence behind any claim. README with architecture diagram, a recorded demo, and the eval numbers up top. 
+**Phase 5 — UI + polish (2–3 days).** React (Vite + TS + Tailwind) app: submit question, watch the SSE progress stream live, read the report, inspect the evidence behind any claim. README with architecture diagram, a recorded demo, and the eval numbers up top.
+
+**Phase 6 — Authentication (~2 days).** JWT-based auth (httpOnly cookies, access + refresh tokens with server-side rotation via `refresh_tokens` table), per-user data isolation on all research and document endpoints, React login page + protected routes + transparent token refresh.
 
 ---
 
