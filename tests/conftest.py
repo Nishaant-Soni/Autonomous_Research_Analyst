@@ -20,14 +20,24 @@ _DB = os.environ.get("RUN_DB_TESTS") == "1"
 def override_auth():
     """Override get_current_user to return a fake user (id=FAKE_USER_ID).
 
-    Use in tests that exercise endpoints requiring auth but don't need real token/DB auth.
-    Seed any DB rows that must be visible to this user with user_id=FAKE_USER_ID.
+    When RUN_DB_TESTS=1, inserts a real User row so FK constraints on user_id columns
+    (research_sessions, documents) are satisfied. TRUNCATE RESTART IDENTITY ensures the
+    first inserted user gets id=1 = FAKE_USER_ID.
     """
     from app.auth.dependencies import get_current_user
     from app.main import app
 
     fake = MagicMock()
     fake.id = FAKE_USER_ID
+
+    if _DB:
+        from app.db.models import User
+        from app.db.session import SessionLocal
+
+        with SessionLocal() as db:
+            db.add(User(email="testuser@example.com", hashed_pw="notahash"))
+            db.commit()
+
     app.dependency_overrides[get_current_user] = lambda: fake
     yield fake
     app.dependency_overrides.pop(get_current_user, None)
