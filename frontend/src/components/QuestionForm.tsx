@@ -36,11 +36,11 @@ export function QuestionForm({ onSubmitted }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-3.5">
       <div>
         <p className="eyebrow">Start a new run</p>
         <h3 className="mt-2 text-2xl font-semibold text-white">Draft the research brief</h3>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+        <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
           Ask one focused question and the system will return a cited report with inspectable
           evidence.
         </p>
@@ -51,7 +51,7 @@ export function QuestionForm({ onSubmitted }: Props) {
         <textarea
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          rows={4}
+          rows={3}
           className="textarea-field"
           placeholder="Example: Compare how top teams evaluate retrieval quality for internal research copilots. Include concrete metrics, failure modes, and what is practical to instrument in production."
           disabled={submitting}
@@ -64,7 +64,7 @@ export function QuestionForm({ onSubmitted }: Props) {
         </div>
       )}
 
-      <div className="flex justify-end border-t border-white/10 pt-4">
+      <div className="flex justify-end border-t border-white/10 pt-3.5">
         <button type="submit" disabled={!canSubmit} className="button-primary">
           {submitting ? (
             <>

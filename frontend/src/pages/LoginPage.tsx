@@ -6,7 +6,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 const BENEFITS = [
   "Blend private documents with live web retrieval.",
   "Trace every report sentence back to inspectable evidence.",
-  "Keep long-running authenticated sessions alive with token refresh.",
+  "Review live investigation progress before the final report lands.",
 ];
 
 export function LoginPage() {

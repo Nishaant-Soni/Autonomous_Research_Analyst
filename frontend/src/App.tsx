@@ -80,7 +80,7 @@ function AppInner() {
           <div className="space-y-5 pb-8">
             {selectedSessionId === null ? (
               <div className="space-y-5">
-                <section className="panel-strong px-6 py-6 sm:px-8 sm:py-7">
+                <section className="panel-strong px-6 py-4 sm:px-7 sm:py-5">
                   <QuestionForm onSubmitted={handleSubmitted} />
                 </section>
 

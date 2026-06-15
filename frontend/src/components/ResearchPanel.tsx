@@ -20,6 +20,25 @@ const STAGES = [
 
 const TERMINAL = new Set(["done", "failed"]);
 
+function formatSourcesBlock(reportMd: string): string {
+  const marker = "\n## Sources\n";
+  const start = reportMd.indexOf(marker);
+  if (start === -1) return reportMd;
+
+  const body = reportMd.slice(0, start + marker.length);
+  const sources = reportMd.slice(start + marker.length).trim();
+  if (!sources) return reportMd;
+
+  const rewritten = sources
+    .replace(/\s+(?=\[\d+\]\s)/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join("\n\n");
+
+  return `${body}${rewritten}`;
+}
+
 function buildCitedEvidence(reportMd: string, all: EvidenceItem[]): EvidenceItem[] {
   const sourcesMatch = reportMd.match(/^##\s*Sources\s*\n([\s\S]*)$/im);
   if (!sourcesMatch) return all;
@@ -145,7 +164,7 @@ function EvidencePanel({ evidence, highlightN, itemRefs }: EvidencePanelProps) {
         </p>
       </div>
 
-      <div className="max-h-[60vh] divide-y divide-white/5 overflow-y-auto scrollbar-thin">
+      <div className="max-h-[68vh] divide-y divide-white/5 overflow-y-auto scrollbar-thin">
         {evidence.length === 0 && (
           <div className="px-5 py-10 text-center">
             <p className="text-sm font-medium text-slate-300">No evidence available yet</p>
@@ -391,7 +410,7 @@ export function ResearchPanel({ sessionId }: Props) {
       </section>
 
       {isDone && !reportLoading && reportMd && (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.18fr)_24rem]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.18fr)_18.2rem]">
           <section className="panel overflow-hidden">
             <div className="border-b border-white/10 px-6 py-5">
               <p className="eyebrow">Final output</p>
@@ -468,7 +487,7 @@ export function ResearchPanel({ sessionId }: Props) {
                     hr: () => <hr className="border-white/10" />,
                   }}
                 >
-                  {reportMd}
+                  {formatSourcesBlock(reportMd)}
                 </ReactMarkdown>
               </div>
             </div>
