@@ -101,7 +101,7 @@ function AppInner() {
                 </section>
               </div>
             ) : (
-              <ResearchPanel sessionId={selectedSessionId} />
+              <ResearchPanel key={selectedSessionId} sessionId={selectedSessionId} />
             )}
           </div>
         </main>

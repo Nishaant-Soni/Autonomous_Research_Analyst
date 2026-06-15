@@ -92,20 +92,14 @@ export function RunHistory({
   useEffect(() => {
     let active = true;
 
-    if (selectedSessionId === null) {
-      setSelectedDetail(null);
-      return () => {
-        active = false;
-      };
-    }
+    const fetcher =
+      selectedSessionId !== null
+        ? getResearch(selectedSessionId).catch(() => null)
+        : Promise.resolve(null);
 
-    getResearch(selectedSessionId)
-      .then((data) => {
-        if (active) setSelectedDetail(data);
-      })
-      .catch(() => {
-        if (active) setSelectedDetail(null);
-      });
+    fetcher.then((data) => {
+      if (active) setSelectedDetail(data);
+    });
 
     return () => {
       active = false;

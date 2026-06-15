@@ -252,16 +252,6 @@ export function ResearchPanel({ sessionId }: Props) {
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    setStatus("planning");
-    setStreamError(null);
-    setReportMd(null);
-    setCitationsValid(null);
-    setLowConfidence(null);
-    setEvidence([]);
-    setReportLoading(false);
-    setHighlightN(null);
-    itemRefs.current = [];
-
     let terminalReceived = false;
     let cancelled = false;
     let reconnectAttempted = false;
