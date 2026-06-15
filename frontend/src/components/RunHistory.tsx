@@ -7,6 +7,7 @@ const POLL_MS = 3000;
 interface Props {
   selectedSessionId: number | null;
   onSelect: (id: number) => void;
+  onNewResearch: () => void;
   refreshKey: number;
 }
 
@@ -36,7 +37,7 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-export function RunHistory({ selectedSessionId, onSelect, refreshKey }: Props) {
+export function RunHistory({ selectedSessionId, onSelect, onNewResearch, refreshKey }: Props) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [runs, setRuns] = useState<ResearchSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -75,10 +76,21 @@ export function RunHistory({ selectedSessionId, onSelect, refreshKey }: Props) {
   return (
     <aside className="flex w-64 flex-none flex-col border-r border-slate-200 bg-white">
       {/* Sidebar header */}
-      <div className="border-b border-slate-100 px-4 py-3.5">
+      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
           Recent runs
         </h2>
+        <button
+          type="button"
+          onClick={onNewResearch}
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+            <path d="M5.433 13.917l1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.643-.643z" />
+            <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
+          </svg>
+          New
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin">

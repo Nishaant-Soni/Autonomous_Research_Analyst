@@ -60,21 +60,23 @@ function AppInner() {
         <RunHistory
           selectedSessionId={selectedSessionId}
           onSelect={setSelectedSessionId}
+          onNewResearch={() => setSelectedSessionId(null)}
           refreshKey={historyRefreshKey}
         />
 
         <main className="flex-1 overflow-y-auto scrollbar-thin">
           <div className="space-y-5 p-6">
-            {/* Question form card */}
-            <div className="rounded-xl bg-white px-6 py-5 shadow-sm ring-1 ring-slate-200">
-              <QuestionForm onSubmitted={handleSubmitted} />
-            </div>
+            {selectedSessionId === null ? (
+              <>
+                {/* Question form card */}
+                <div className="rounded-xl bg-white px-6 py-5 shadow-sm ring-1 ring-slate-200">
+                  <QuestionForm onSubmitted={handleSubmitted} />
+                </div>
 
-            {/* Document upload (collapsible) */}
-            <DocumentUploadForm />
-
-            {/* Research panel — mounted once a session is selected */}
-            {selectedSessionId !== null && (
+                {/* Document upload (collapsible) */}
+                <DocumentUploadForm />
+              </>
+            ) : (
               <ResearchPanel sessionId={selectedSessionId} />
             )}
           </div>
