@@ -38,42 +38,52 @@ export function QuestionForm({ onSubmitted }: Props) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="mb-1.5 block text-sm font-semibold text-slate-800">
-          Research question
-        </label>
+        <p className="eyebrow">Start a new run</p>
+        <h3 className="mt-2 text-2xl font-semibold text-white">Draft the research brief</h3>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+          Ask one focused question and the system will return a cited report with inspectable
+          evidence.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-slate-200">Research question</label>
         <textarea
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          rows={3}
-          className="w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:opacity-50"
-          placeholder="e.g. What are the key advantages of retrieval-augmented generation over fine-tuning?"
+          rows={4}
+          className="textarea-field"
+          placeholder="Example: Compare how top teams evaluate retrieval quality for internal research copilots. Include concrete metrics, failure modes, and what is practical to instrument in production."
           disabled={submitting}
         />
       </div>
 
       {error && (
-        <p className="rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700">
+        <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
           {error}
-        </p>
+        </div>
       )}
 
-      <button
-        type="submit"
-        disabled={!canSubmit}
-        className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {submitting ? (
-          <>
-            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            Starting research…
-          </>
-        ) : (
-          "Start research"
-        )}
-      </button>
+      <div className="flex justify-end border-t border-white/10 pt-4">
+        <button type="submit" disabled={!canSubmit} className="button-primary">
+          {submitting ? (
+            <>
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Launching run...
+            </>
+          ) : (
+            <>
+              Start research
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path fillRule="evenodd" d="M11.72 4.22a.75.75 0 0 1 1.06 0l5 5a.75.75 0 0 1 0 1.06l-5 5a.75.75 0 1 1-1.06-1.06l3.72-3.72H3a.75.75 0 0 1 0-1.5h12.44l-3.72-3.72a.75.75 0 0 1 0-1.06z" clipRule="evenodd" />
+              </svg>
+            </>
+          )}
+        </button>
+      </div>
     </form>
   );
 }

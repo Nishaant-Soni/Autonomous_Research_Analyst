@@ -1,16 +1,176 @@
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: dark;
+    --bg: #07111f;
+    --bg-elevated: rgba(12, 23, 41, 0.82);
+    --bg-panel: rgba(9, 18, 34, 0.88);
+    --bg-panel-strong: rgba(6, 13, 26, 0.96);
+    --bg-muted: rgba(131, 147, 179, 0.12);
+    --border: rgba(151, 165, 193, 0.18);
+    --border-strong: rgba(180, 193, 220, 0.28);
+    --text: #e8edf8;
+    --text-soft: #aab6cf;
+    --text-faint: #7f8ca8;
+    --accent: #7dd3fc;
+    --accent-strong: #22d3ee;
+    --accent-warm: #f59e0b;
+    --success: #34d399;
+    --danger: #fb7185;
+    --shadow-lg: 0 28px 80px rgba(0, 0, 0, 0.32);
+    --shadow-md: 0 14px 36px rgba(0, 0, 0, 0.24);
+  }
+
+  * {
+    @apply border-transparent;
+  }
+
+  html {
+    @apply h-full scroll-smooth;
+  }
+
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    min-height: 100%;
+    background:
+      radial-gradient(circle at top left, rgba(34, 211, 238, 0.14), transparent 28%),
+      radial-gradient(circle at top right, rgba(139, 92, 246, 0.16), transparent 24%),
+      linear-gradient(180deg, #08111f 0%, #050b14 46%, #03070e 100%);
+    color: var(--text);
+    font-family: "Space Grotesk", "Trebuchet MS", sans-serif;
+    @apply antialiased;
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+
+  button,
+  input,
+  textarea,
+  summary {
+    @apply outline-none;
+  }
+
+  summary {
+    list-style: none;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  ::selection {
+    background: rgba(125, 211, 252, 0.22);
+    color: white;
+  }
+}
+
+@layer components {
+  .app-shell {
+    @apply min-h-screen;
+    background:
+      radial-gradient(circle at 20% 0%, rgba(34, 211, 238, 0.08), transparent 24%),
+      radial-gradient(circle at 85% 10%, rgba(168, 85, 247, 0.1), transparent 20%);
+  }
+
+  .panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-md);
+    @apply rounded-[28px] backdrop-blur-xl;
+  }
+
+  .panel-strong {
+    background: var(--bg-panel-strong);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-lg);
+    @apply rounded-[32px] backdrop-blur-xl;
+  }
+
+  .panel-muted {
+    background: var(--bg-muted);
+    border: 1px solid rgba(151, 165, 193, 0.12);
+    @apply rounded-2xl backdrop-blur-sm;
+  }
+
+  .eyebrow {
+    color: var(--accent);
+    @apply text-[11px] font-semibold uppercase tracking-[0.28em];
+  }
+
+  .headline-serif {
+    font-family: "Instrument Serif", "Times New Roman", serif;
+    letter-spacing: -0.02em;
+  }
+
+  .field {
+    background: rgba(10, 18, 34, 0.88);
+    border: 1px solid rgba(151, 165, 193, 0.16);
+    color: var(--text);
+    @apply w-full rounded-2xl px-4 py-3 text-sm shadow-inner shadow-black/10 transition duration-200 placeholder:text-slate-500 focus:border-cyan-400/55 focus:ring-2 focus:ring-cyan-300/20;
+  }
+
+  .textarea-field {
+    @apply field min-h-[128px] resize-y py-4 leading-relaxed;
+  }
+
+  .button-primary {
+    background: linear-gradient(135deg, #22d3ee 0%, #3b82f6 45%, #8b5cf6 100%);
+    box-shadow: 0 10px 30px rgba(37, 99, 235, 0.28);
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold text-white transition duration-200 hover:scale-[1.01] hover:shadow-[0_18px_36px_rgba(37,99,235,0.22)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100;
+  }
+
+  .button-secondary {
+    background: rgba(148, 163, 184, 0.08);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    color: var(--text-soft);
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-medium transition duration-200 hover:border-slate-500/40 hover:bg-slate-800/70 hover:text-white;
+  }
+
+  .status-pill {
+    @apply inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em];
   }
 }
 
 @layer utilities {
+  .text-soft {
+    color: var(--text-soft);
+  }
+
+  .text-faint {
+    color: var(--text-faint);
+  }
+
+  .bg-grid {
+    background-image:
+      linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: theme('colors.slate.200') transparent;
+    scrollbar-color: rgba(148, 163, 184, 0.32) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.24);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
   }
 }
