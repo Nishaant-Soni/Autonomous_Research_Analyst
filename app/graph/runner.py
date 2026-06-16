@@ -160,7 +160,18 @@ async def run_research(
                     _update_session(session_id, status=status)
                     _emit(queue, {"node": ev["name"], "status": status})
         final = (await graph.aget_state(config)).values
-        _persist_result(session_id, final)
+        try:
+            _persist_result(session_id, final)
+        except Exception as persist_exc:
+            # Transient DB error — the transaction fully rolled back so retrying is safe.
+            logger.warning(
+                "persist failed for session %s, retrying once: %s",
+                session_id,
+                persist_exc,
+            )
+            _persist_result(
+                session_id, final
+            )  # propagates to outer handler if it fails again
         # _schedule_scoring(session_id, question, final["evidence"], final["report_md"])
         _emit(queue, {"status": "done"})
         return final

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.auth import router as auth_router
 from app.api.documents import router as documents_router
 from app.api.research import router as research_router
+from app.config import settings
 from app.db.init_db import checkpointer_cm, init_db, mark_abandoned_sessions
 from app.observability import configure_langsmith
 
@@ -19,6 +20,11 @@ async def lifespan(app: FastAPI):
     `async with` stays open for the app's lifetime so the connection isn't closed at run time.
     (Only runs when the app is actually started — bare `TestClient(app)` does not trigger it.)
     """
+    if not settings.jwt_secret:
+        raise RuntimeError(
+            "JWT_SECRET is not set. Generate one with: "
+            "python -c 'import secrets; print(secrets.token_urlsafe(64))'"
+        )
     configure_langsmith()  # enable tracing if a LANGSMITH_API_KEY is set (3.7); else a no-op
     async with checkpointer_cm() as checkpointer:
         await init_db(checkpointer)

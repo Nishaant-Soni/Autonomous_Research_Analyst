@@ -18,6 +18,10 @@ from app.config import settings
 from app.db.models import RefreshToken, User
 from app.db.session import get_db
 
+# Pre-computed dummy hash used in login to ensure constant-time response
+# regardless of whether the email exists, preventing timing-based enumeration.
+_DUMMY_HASH = hash_password("dummy-constant-time-guard")
+
 router = APIRouter(prefix="/auth")
 
 
@@ -75,8 +79,10 @@ def register(body: AuthIn, db: Session = Depends(get_db)) -> UserOut:
 @router.post("/login", response_model=UserOut)
 def login(body: AuthIn, response: Response, db: Session = Depends(get_db)) -> UserOut:
     user = db.query(User).filter_by(email=body.email).first()
-    # Constant-time check even when user is missing to prevent timing-based enumeration.
-    if user is None or not verify_password(body.password, user.hashed_pw):
+    # Always run verify_password (even when user is None) so response time is constant
+    # regardless of whether the email exists, preventing timing-based enumeration.
+    ok = verify_password(body.password, user.hashed_pw if user else _DUMMY_HASH)
+    if not ok or user is None:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     access = create_access_token(user.id)

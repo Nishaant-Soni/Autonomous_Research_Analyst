@@ -86,11 +86,11 @@ async def ingest_document_upload(
             detail=f"unsupported file type {ext!r}; allowed: {sorted(_ALLOWED_EXTS)}",
         )
 
-    data = await file.read()
+    data = await file.read(_MAX_UPLOAD_BYTES + 1)
     if len(data) > _MAX_UPLOAD_BYTES:
         raise HTTPException(
             status_code=413,
-            detail=f"file too large ({len(data)} bytes); max {_MAX_UPLOAD_BYTES}",
+            detail=f"file too large; max {_MAX_UPLOAD_BYTES // 1024 // 1024} MB",
         )
 
     text = _extract_text(filename, data)

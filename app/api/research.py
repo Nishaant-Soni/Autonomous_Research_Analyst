@@ -226,7 +226,11 @@ async def stream_research(
         return StreamingResponse(_drain(), media_type="text/event-stream")
 
     # No live queue: run already finished (queue removed) or never existed.
+    # Read status eagerly — the DB session closes when this endpoint returns,
+    # before the StreamingResponse generator executes.
+    terminal_status = session.status
+
     async def _terminal():
-        yield _sse({"status": session.status})
+        yield _sse({"status": terminal_status})
 
     return StreamingResponse(_terminal(), media_type="text/event-stream")
