@@ -7,7 +7,12 @@ from app.api.auth import router as auth_router
 from app.api.documents import router as documents_router
 from app.api.research import router as research_router
 from app.config import settings
-from app.db.init_db import checkpointer_cm, init_db, mark_abandoned_sessions, purge_expired_refresh_tokens
+from app.db.init_db import (
+    checkpointer_cm,
+    init_db,
+    mark_abandoned_sessions,
+    purge_expired_refresh_tokens,
+)
 from app.observability import configure_langsmith
 
 _CORS_ALLOW_ORIGIN_REGEX = r"^http://(localhost|127\.0\.0\.1)(:\d+)?$"
