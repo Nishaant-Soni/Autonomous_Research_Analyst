@@ -1,6 +1,6 @@
 # Autonomous Research Analyst
 
-A production-grade multi-agent system that accepts a research question, plans an investigation, gathers evidence from the live web and a private document corpus, critiques and fact-checks its own findings, and delivers a fully cited Markdown report — all in a single API call.
+A production-grade multi-agent system that accepts a research question, plans an investigation, gathers evidence from the live web and a private document corpus, critiques and fact-checks its own findings, and delivers a fully cited Markdown report.
 
 **Stack:** LangGraph · FastAPI · PostgreSQL + pgvector · OpenAI · Tavily · React + Vite + TypeScript + Tailwind · LangSmith · Ragas · Docker Compose
 
