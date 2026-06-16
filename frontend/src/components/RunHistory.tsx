@@ -107,7 +107,7 @@ export function RunHistory({
   }, [selectedSessionId, refreshKey]);
 
   return (
-    <aside className="panel min-h-[300px] w-full overflow-hidden lg:w-[17.2rem] lg:flex-none">
+    <aside className="panel-strong min-h-[300px] w-full overflow-hidden lg:w-[17.2rem] lg:flex-none">
       <div className="border-b border-white/10 px-5 py-5">
         <div className="flex items-start justify-between gap-3">
           <div>
