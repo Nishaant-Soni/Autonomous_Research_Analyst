@@ -27,7 +27,7 @@ _ALLOWED_EXTS = {".txt", ".md", ".pdf"}
 
 
 class DocumentIn(BaseModel):
-    raw_text: str = Field(min_length=1)
+    raw_text: str = Field(min_length=1, max_length=_MAX_UPLOAD_BYTES)
     title: str | None = None
     source_uri: str | None = None
     metadata: dict | None = None

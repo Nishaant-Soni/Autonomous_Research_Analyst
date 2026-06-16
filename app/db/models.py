@@ -96,7 +96,7 @@ class ResearchSession(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
-    plan: Mapped[dict | None] = mapped_column(JSONB)
+    plan: Mapped[list[str] | None] = mapped_column(JSONB)
     low_confidence: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )

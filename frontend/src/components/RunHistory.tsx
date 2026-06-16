@@ -60,6 +60,7 @@ export function RunHistory({
 
   useEffect(() => {
     let active = true;
+    const handle = { current: 0 as ReturnType<typeof setInterval> };
 
     async function load() {
       try {
@@ -68,6 +69,9 @@ export function RunHistory({
         setRuns(data);
         setPhase("ready");
         setError(null);
+        if (data.length > 0 && data.every((r) => !IN_PROGRESS.has(r.status))) {
+          clearInterval(handle.current);
+        }
       } catch (err) {
         if (!active) return;
         setPhase("error");
@@ -82,10 +86,10 @@ export function RunHistory({
     }
 
     load();
-    const handle = setInterval(load, POLL_MS);
+    handle.current = setInterval(load, POLL_MS);
     return () => {
       active = false;
-      clearInterval(handle);
+      clearInterval(handle.current);
     };
   }, [refreshKey]);
 
