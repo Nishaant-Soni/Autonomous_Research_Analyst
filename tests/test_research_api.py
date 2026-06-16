@@ -6,6 +6,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
+from app.config import settings
 from app.main import app
 
 requires_db = pytest.mark.skipif(
@@ -74,6 +75,11 @@ def test_start_research_returns_id_and_creates_session(monkeypatch, override_aut
 
     from app.db.models import ResearchSession
     from app.db.session import SessionLocal
+
+    # Satisfy startup guards — lifespan checks these before opening the checkpointer.
+    monkeypatch.setattr(settings, "jwt_secret", "test-secret-for-lifespan-check")
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
+    monkeypatch.setattr(settings, "tavily_api_key", "tvly-test")
 
     # Context-manager use triggers the lifespan -> opens the checkpointer on app.state.
     with TestClient(app) as client:

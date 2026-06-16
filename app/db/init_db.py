@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import update
+from sqlalchemy import delete, update
 
 from app.config import settings
 from app.db.session import engine
@@ -59,6 +59,26 @@ async def init_db(checkpointer) -> None:
 # `failed` so the UI / API consumers see an honest terminal state instead of a zombie.
 _TERMINAL_STATUSES = ("done", "failed")
 _ABANDONED_ERROR = "abandoned at startup"
+
+
+def purge_expired_refresh_tokens() -> int:
+    """Delete refresh_tokens rows whose expiry has passed.
+
+    Called once at startup alongside mark_abandoned_sessions(). Tokens expire after 7
+    days by default; without this sweep the table grows indefinitely. Safe to call on
+    every boot (idempotent: already-purged rows are simply absent).
+    """
+    from app.db.models import RefreshToken
+    from app.db.session import SessionLocal
+
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        result = db.execute(delete(RefreshToken).where(RefreshToken.expires_at < now))
+        db.commit()
+        n = result.rowcount
+    if n:
+        logger.info("purged %d expired refresh token(s) at startup", n)
+    return n
 
 
 def mark_abandoned_sessions() -> int:

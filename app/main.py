@@ -7,7 +7,7 @@ from app.api.auth import router as auth_router
 from app.api.documents import router as documents_router
 from app.api.research import router as research_router
 from app.config import settings
-from app.db.init_db import checkpointer_cm, init_db, mark_abandoned_sessions
+from app.db.init_db import checkpointer_cm, init_db, mark_abandoned_sessions, purge_expired_refresh_tokens
 from app.observability import configure_langsmith
 
 _CORS_ALLOW_ORIGIN_REGEX = r"^http://(localhost|127\.0\.0\.1)(:\d+)?$"
@@ -25,10 +25,15 @@ async def lifespan(app: FastAPI):
             "JWT_SECRET is not set. Generate one with: "
             "python -c 'import secrets; print(secrets.token_urlsafe(64))'"
         )
+    if not settings.openai_api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set — required for LLM agents.")
+    if not settings.tavily_api_key:
+        raise RuntimeError("TAVILY_API_KEY is not set — required for web search.")
     configure_langsmith()  # enable tracing if a LANGSMITH_API_KEY is set (3.7); else a no-op
     async with checkpointer_cm() as checkpointer:
         await init_db(checkpointer)
         mark_abandoned_sessions()
+        purge_expired_refresh_tokens()
         app.state.checkpointer = checkpointer
         yield
 
