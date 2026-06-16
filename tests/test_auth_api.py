@@ -9,18 +9,14 @@ pytestmark = pytest.mark.skipif(not _DB, reason="requires RUN_DB_TESTS=1")
 
 
 @pytest.fixture(autouse=True)
-def _set_jwt_secret(monkeypatch):
-    monkeypatch.setenv("JWT_SECRET", "test-secret-for-auth-api-tests")
-    # Patch settings so already-imported modules see the test secret.
+def _set_required_settings(monkeypatch):
     import app.auth.utils as utils_mod
     import app.config as cfg_mod
 
-    monkeypatch.setattr(
-        cfg_mod.settings, "jwt_secret", "test-secret-for-auth-api-tests"
-    )
-    monkeypatch.setattr(
-        utils_mod.settings, "jwt_secret", "test-secret-for-auth-api-tests"
-    )
+    monkeypatch.setattr(cfg_mod.settings, "jwt_secret", "test-secret-for-auth-api-tests")
+    monkeypatch.setattr(utils_mod.settings, "jwt_secret", "test-secret-for-auth-api-tests")
+    monkeypatch.setattr(cfg_mod.settings, "openai_api_key", "sk-test")
+    monkeypatch.setattr(cfg_mod.settings, "tavily_api_key", "tvly-test")
 
 
 @pytest.fixture
