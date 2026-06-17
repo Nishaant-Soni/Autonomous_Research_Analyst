@@ -119,6 +119,7 @@ class ResearchState(TypedDict):
     citations_valid: bool
     low_confidence: bool            # set by citation validator: >50% of cited claims stripped
     stripped_fraction: float        # fraction of cited sentences dropped by the validator
+    user_id: int | None             # owning user (Phase 6); scopes RAG retrieval per user
 ```
 `Evidence` carries `claim`, `content`, `source_url` or `source_chunk_id`, and `retriever` ("web" | "rag"). Keeping evidence structured from the moment it's gathered is what makes deterministic citation validation possible at the end.
 
@@ -163,16 +164,19 @@ The guiding principle is *one well-chosen tool per job*. The original brief list
 ## 8. Data model
 
 ```
-documents      (id, source_uri, title, raw_text, metadata jsonb, created_at)
+documents      (id, source_uri, title, raw_text, metadata jsonb, user_id fk?, created_at)
 chunks         (id, document_id fk, chunk_index, content, embedding vector(384))
 research_sessions (id, question, status, plan jsonb, low_confidence bool,
-                   stripped_fraction float, error text, created_at, completed_at)
+                   stripped_fraction float, error text, user_id fk?, created_at, completed_at)
 evidence       (id, session_id fk, claim, content, source_url, source_chunk_id fk?,
                 retriever, created_at)
 reports        (id, session_id fk, report_md, citations_valid bool,
                 faithfulness float, answer_relevancy float, hallucination_rate float,
                 created_at)
+users          (id, email unique, hashed_pw, created_at)
+refresh_tokens (jti pk, user_id fk, issued_at, expires_at, used bool)
 ```
+The `users` and `refresh_tokens` tables and the (nullable) `user_id` FK columns on `documents` and `research_sessions` were added in Phase 6 for JWT auth and per-user data isolation (§9, §12). `user_id` is nullable so pre-auth rows migrate cleanly; new writes always set it. `chunks` carries no `user_id` — ownership is resolved by joining to `documents`.
 `research_sessions.low_confidence` and `stripped_fraction` are set by the citation validator node and surfaced on `GET /research/{id}`. `research_sessions.error` holds the exception string on failed runs. The three float columns on `reports` are nullable (populated only when per-run Ragas scoring is enabled; disabled by default).
 An HNSW or IVFFlat index on `chunks.embedding` handles similarity search. The vector dimension (384, for `bge-small-en-v1.5`) must match the chosen embedding model and be identical at ingest and query time — changing models means re-embedding the corpus and altering the column. Model-specific note: `bge-small-en-v1.5` reaches its best retrieval scores when *queries* (not stored documents) are prefixed with a short instruction such as `"Represent this sentence for searching relevant passages: "`. Apply the prefix only on the query path. `all-MiniLM-L6-v2` (also 384-dim, so drop-in compatible) needs no prefix, which makes it a friction-free baseline. `evidence.source_chunk_id` links corpus-derived claims back to exact chunks; web-derived claims carry `source_url`. This dual path is what lets the citation validator verify both source types uniformly.
 
@@ -182,7 +186,12 @@ An HNSW or IVFFlat index on `chunks.embedding` handles similarity search. The ve
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/health` | Liveness check |
+| GET | `/health` | Liveness check (public) |
+| POST | `/auth/register` | Create a user (`{email, password}`) → `201` |
+| POST | `/auth/login` | Authenticate; sets httpOnly access + refresh cookies |
+| POST | `/auth/refresh` | Rotate the token pair (server-side `jti`); old refresh token invalidated |
+| POST | `/auth/logout` | Clear cookies and revoke the current refresh token |
+| GET | `/auth/me` | Return the current user (state rehydration) |
 | POST | `/documents` | Ingest raw text (JSON body): chunk, embed, store |
 | POST | `/documents/upload` | Ingest a file upload (`.txt`/`.md`/`.pdf`, ≤ 5 MB): parsed server-side via pypdf |
 | POST | `/research` | Start a research session (async) → `{session_id}` |
@@ -190,6 +199,8 @@ An HNSW or IVFFlat index on `chunks.embedding` handles similarity search. The ve
 | GET | `/research/{id}` | Poll status + final report when ready |
 | GET | `/research/{id}/stream` | SSE stream of per-agent progress events |
 | GET | `/research/{id}/evidence` | Inspect the evidence behind the report |
+
+All `/research*` and `/documents*` endpoints require a valid access-token cookie (Phase 6); `/health` is the only public data path. Reads are scoped to the authenticated user, and cross-user access to a session returns `404` (indistinguishable from a nonexistent ID — see §12).
 
 Research runs are dispatched as background tasks; the client polls or subscribes to the stream. Status moves through `planning → researching → critiquing → writing → validating → done | failed`.
 
@@ -222,6 +233,7 @@ LangSmith captures every agent's prompt, output, token usage, latency, and the f
 - Per-session cost is bounded by the `max_iterations` cap and a token budget per agent.
 - Web-fetched content is treated as untrusted input; the system never executes instructions found inside retrieved pages (prompt-injection guard in the Researcher system prompt).
 - Every agent call wrapped with retry + timeout; a failed agent fails the session cleanly with a status rather than hanging.
+- **Auth (Phase 6):** JWT-based auth over httpOnly cookies (opaque to JS, so XSS can't exfiltrate tokens; `SameSite=Strict` closes CSRF). Short-lived access token + long-lived refresh token with *real* server-side rotation backed by the `refresh_tokens` table — a redeemed `jti` is marked `used` and rejected on reuse, bounding the blast radius of a leaked token. Per-user data isolation is enforced on every read and write (including user-scoped RAG retrieval); cross-user access returns `404`, not `403`, so valid session IDs can't be enumerated. `JWT_SECRET` is required (fail-fast at startup); `COOKIE_SECURE` must be `true` over HTTPS in production.
 
 ---
 
