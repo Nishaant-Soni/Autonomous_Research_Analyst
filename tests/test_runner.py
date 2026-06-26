@@ -125,7 +125,9 @@ def test_persist_nulls_dangling_chunk_reference():
     final = {
         "evidence": [
             Evidence(content="web", source_url="https://e.com", retriever="web"),
-            Evidence(content="good rag", source_chunk_id=valid_chunk_id, retriever="rag"),
+            Evidence(
+                content="good rag", source_chunk_id=valid_chunk_id, retriever="rag"
+            ),
             Evidence(
                 content="dangling rag",
                 source_chunk_id=valid_chunk_id + 999,  # no such chunk
@@ -174,7 +176,10 @@ def test_deleting_chunk_nulls_evidence_reference():
         db.add(session)
         db.flush()
         ev = EvidenceRow(
-            session_id=session.id, content="x", source_chunk_id=chunk_id, retriever="rag"
+            session_id=session.id,
+            content="x",
+            source_chunk_id=chunk_id,
+            retriever="rag",
         )
         db.add(ev)
         db.commit()

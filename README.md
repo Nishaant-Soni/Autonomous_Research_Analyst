@@ -127,7 +127,7 @@ Open `http://localhost:5173`, register an account, and submit a research questio
 | **Retrieval** | ✅ | Document ingestion (chunk + embed + store), pgvector similarity search, Tavily web search |
 | **Agent graph** | ✅ | `ResearchState` contract, 5 agent nodes, LangGraph `StateGraph` with bounded critic loop + Postgres checkpointing |
 | **Async API** | ✅ | `POST /research` fires background run; SSE streams per-agent progress; full status lifecycle; LangSmith tracing |
-| **Reliability** | ✅ | Per-call timeouts + retries, token budgets, clean failure path, startup zombie sweep for in-flight sessions |
+| **Reliability** | ✅ | Per-call timeouts + retries, token budgets, clean failure path, startup zombie sweep, rate limiting on write endpoints, FK data-integrity guard on evidence persistence |
 | **Eval harness** | ✅ | 16-item golden dataset, self-authored seed corpus, run/score/report pipeline; Ragas faithfulness + answer relevancy + context recall; LangSmith cost tracking |
 | **Critic tuning** | ✅ | 3-arm A/B; tightened gate cuts hallucination 5.5% → 4.1% at near-OFF cost |
 | **React UI** | ✅ | SSE-driven progress timeline, Markdown report, evidence inspector with citation-click-to-scroll, recent-runs sidebar |
@@ -152,6 +152,8 @@ Open `http://localhost:5173`, register an account, and submit a research questio
 | `GET` | `/research/{id}` | required | Poll status; returns report + `citations_valid` + `low_confidence` once done |
 | `GET` | `/research/{id}/evidence` | required | Structured evidence for a session |
 | `GET` | `/research/{id}/stream` | required | SSE stream of per-agent progress |
+
+**Rate limiting.** The write endpoints are rate-limited (`slowapi`), keyed per authenticated user when logged in and per IP otherwise; a tripped limit returns `429`. Read-only GETs (status poll, SSE stream, list) are intentionally unlimited so the UI's polling isn't throttled. Limits: `POST /research` 10/min, `POST /documents[/upload]` 20/min (per user); `POST /auth/login` 10/min, `POST /auth/register` 5/min (per IP). Toggle with `RATE_LIMIT_ENABLED` (default on). Storage is in-process (single container); Redis is the multi-worker scale path.
 
 ---
 
@@ -265,4 +267,5 @@ All settings from environment variables / `.env` (see [`.env.example`](./.env.ex
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | Access token lifetime |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifetime |
 | `COOKIE_SECURE` | `false` | Set `true` in production (HTTPS only). Must be `false` for local `http://localhost` dev |
+| `RATE_LIMIT_ENABLED` | `true` | Rate-limit the write endpoints (per-endpoint limits in `app/api/ratelimit.py`); set `false` for load testing |
 | `VITE_API_URL` | `http://localhost:8000` | API base URL for the React app |
