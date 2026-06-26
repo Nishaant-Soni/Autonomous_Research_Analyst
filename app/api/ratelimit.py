@@ -48,7 +48,10 @@ def _user_or_ip(request: Request) -> str:
             payload = decode_token(token)
             if payload.get("typ") == "access":
                 return f"user:{payload['sub']}"
-        except jwt.InvalidTokenError:
+        except (jwt.InvalidTokenError, RuntimeError):
+            # InvalidTokenError: bad/expired token. RuntimeError: JWT_SECRET unset (the case
+            # in CI / test envs that don't configure it) — decode_token raises before parsing.
+            # Either way this is best-effort identity, never auth enforcement, so fall back to IP.
             pass
     return f"ip:{get_remote_address(request)}"
 

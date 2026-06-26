@@ -45,10 +45,19 @@ CREATE TABLE IF NOT EXISTS evidence (
     claim            TEXT,
     content          TEXT,
     source_url       TEXT,
-    source_chunk_id  BIGINT REFERENCES chunks(id),
+    -- ON DELETE SET NULL: deleting a chunk unlinks the evidence row instead of being blocked
+    -- by it (and the row stays useful — its content is preserved). Pairs with the persist-time
+    -- guard in app/graph/runner.py that nulls references to chunks that no longer exist.
+    source_chunk_id  BIGINT REFERENCES chunks(id) ON DELETE SET NULL,
     retriever        TEXT NOT NULL,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Schema evolution: volumes created before the ON DELETE SET NULL change have the FK without
+-- it. Drop + re-add to converge; dropping first keeps this idempotent across reboots.
+ALTER TABLE evidence DROP CONSTRAINT IF EXISTS evidence_source_chunk_id_fkey;
+ALTER TABLE evidence ADD CONSTRAINT evidence_source_chunk_id_fkey
+    FOREIGN KEY (source_chunk_id) REFERENCES chunks(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS reports (
     id                BIGSERIAL PRIMARY KEY,

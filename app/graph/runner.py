@@ -12,7 +12,10 @@ API lifespan / `run_once` own them) — this never creates the session or calls 
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy import select
+
 from app.config import settings
+from app.db.models import Chunk
 from app.db.models import Evidence as EvidenceRow
 from app.db.models import Report, ResearchSession
 from app.db.session import SessionLocal
@@ -84,15 +87,34 @@ def _update_session(session_id, **fields) -> None:
 def _persist_result(session_id, final: dict) -> None:
     """On success: write the evidence + report rows and close the session out as `done`,
     carrying the citation validator's low_confidence/stripped_fraction signal onto the row."""
+    evidence = final["evidence"]
     with SessionLocal() as db:
-        for ev in final["evidence"]:
+        # Guard: drop any source_chunk_id that no longer resolves to a real chunk row before
+        # inserting, so a stale reference (e.g. a checkpoint replayed after the corpus changed)
+        # degrades to an unlinked evidence row instead of failing the whole persist on the
+        # evidence_source_chunk_id_fkey FK. The row's content is still kept.
+        wanted = {e.source_chunk_id for e in evidence if e.source_chunk_id is not None}
+        valid_chunk_ids: set[int] = set()
+        if wanted:
+            valid_chunk_ids = set(
+                db.scalars(select(Chunk.id).where(Chunk.id.in_(wanted))).all()
+            )
+        for ev in evidence:
+            chunk_id = ev.source_chunk_id
+            if chunk_id is not None and chunk_id not in valid_chunk_ids:
+                logger.warning(
+                    "session %s: evidence references missing chunk %s; storing it unlinked",
+                    session_id,
+                    chunk_id,
+                )
+                chunk_id = None
             db.add(
                 EvidenceRow(
                     session_id=session_id,
                     claim=ev.claim,
                     content=ev.content,
                     source_url=ev.source_url,
-                    source_chunk_id=ev.source_chunk_id,
+                    source_chunk_id=chunk_id,
                     retriever=ev.retriever,
                 )
             )
