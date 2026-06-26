@@ -43,6 +43,20 @@ def override_auth():
     app.dependency_overrides.pop(get_current_user, None)
 
 
+@pytest.fixture(autouse=True)
+def _disable_rate_limit():
+    """Neutralize the slowapi limiter for the suite — repeated TestClient calls share one IP
+    and would otherwise trip per-minute limits across tests. The dedicated rate-limit test
+    re-enables it explicitly. Storage is reset around each test so counts never bleed."""
+    from app.api.ratelimit import limiter
+
+    limiter.enabled = False
+    limiter.reset()
+    yield
+    limiter.reset()
+    limiter.enabled = False
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_schema():
     if _DB:

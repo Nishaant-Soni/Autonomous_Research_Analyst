@@ -9,10 +9,11 @@ Two POST paths share the same `ingest_document` primitive (`app/ingest/store.py`
 import io
 from pathlib import PurePosixPath
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.api.ratelimit import DOCUMENTS_LIMIT, limiter
 from app.auth.dependencies import get_current_user
 from app.db.models import User
 from app.db.session import get_db
@@ -39,7 +40,9 @@ class DocumentOut(BaseModel):
 
 
 @router.post("/documents", response_model=DocumentOut)
+@limiter.limit(DOCUMENTS_LIMIT)
 def ingest_document_endpoint(
+    request: Request,
     doc: DocumentIn,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -73,7 +76,9 @@ def _extract_text(filename: str, data: bytes) -> str:
 
 
 @router.post("/documents/upload", response_model=DocumentOut)
+@limiter.limit(DOCUMENTS_LIMIT)
 async def ingest_document_upload(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

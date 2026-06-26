@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.progress import create_queue, get_queue, remove_queue
+from app.api.ratelimit import RESEARCH_LIMIT, limiter
 from app.auth.dependencies import get_current_user
 from app.db.models import Evidence as EvidenceRow
 from app.db.models import Report, ResearchSession, User
@@ -40,6 +41,7 @@ async def _run_and_cleanup(session_id, question, checkpointer, queue, user_id) -
 
 
 @router.post("/research", response_model=ResearchOut, status_code=202)
+@limiter.limit(RESEARCH_LIMIT)
 async def start_research(
     body: ResearchIn,
     request: Request,

@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.ratelimit import AUTH_LOGIN_LIMIT, AUTH_REGISTER_LIMIT, limiter
 from app.auth.dependencies import get_current_user
 from app.auth.utils import (
     create_access_token,
@@ -64,7 +65,8 @@ def _clear_auth_cookies(response: Response) -> None:
 
 
 @router.post("/register", status_code=201, response_model=UserOut)
-def register(body: AuthIn, db: Session = Depends(get_db)) -> UserOut:
+@limiter.limit(AUTH_REGISTER_LIMIT)
+def register(request: Request, body: AuthIn, db: Session = Depends(get_db)) -> UserOut:
     user = User(email=body.email, hashed_pw=hash_password(body.password))
     db.add(user)
     try:
@@ -77,7 +79,10 @@ def register(body: AuthIn, db: Session = Depends(get_db)) -> UserOut:
 
 
 @router.post("/login", response_model=UserOut)
-def login(body: AuthIn, response: Response, db: Session = Depends(get_db)) -> UserOut:
+@limiter.limit(AUTH_LOGIN_LIMIT)
+def login(
+    request: Request, body: AuthIn, response: Response, db: Session = Depends(get_db)
+) -> UserOut:
     user = db.query(User).filter_by(email=body.email).first()
     # Always run verify_password (even when user is None) so response time is constant
     # regardless of whether the email exists, preventing timing-based enumeration.

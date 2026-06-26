@@ -2,9 +2,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.api.auth import router as auth_router
 from app.api.documents import router as documents_router
+from app.api.ratelimit import limiter
 from app.api.research import router as research_router
 from app.config import settings
 from app.db.init_db import (
@@ -44,6 +47,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Autonomous Research Analyst", lifespan=lifespan)
+# Rate limiting (slowapi): the limiter is referenced by the per-route @limiter.limit
+# decorators via app.state, and the handler turns a tripped limit into a 429 JSON response.
+# (No Retry-After / X-RateLimit-* headers — headers_enabled isn't set on the Limiter.)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=_CORS_ALLOW_ORIGIN_REGEX,

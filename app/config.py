@@ -26,5 +26,9 @@ class Settings(BaseSettings):
     # False for local http://localhost dev — Secure cookies are dropped by browsers on non-HTTPS.
     cookie_secure: bool = False
 
+    # Rate limiting (slowapi). On by default; disabled in the test suite so repeated
+    # TestClient calls don't trip the limiter. Per-endpoint limits live in app/api/ratelimit.py.
+    rate_limit_enabled: bool = True
+
 
 settings = Settings()
