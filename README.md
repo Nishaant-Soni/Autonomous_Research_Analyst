@@ -131,7 +131,7 @@ Open `http://localhost:5173`, register an account, and submit a research questio
 | **Eval harness** | ✅ | 16-item golden dataset, self-authored seed corpus, run/score/report pipeline; Ragas faithfulness + answer relevancy + context recall; LangSmith cost tracking |
 | **Critic tuning** | ✅ | 3-arm A/B; tightened gate cuts hallucination 5.5% → 4.1% at near-OFF cost |
 | **React UI** | ✅ | SSE-driven progress timeline, Markdown report, evidence inspector with citation-click-to-scroll, recent-runs sidebar |
-| **Authentication** | ✅ | JWT httpOnly cookies (access + refresh); rotation backed by `refresh_tokens` table; per-user data isolation (sessions, documents, RAG); React login/signup UI with transparent auto-refresh |
+| **Authentication** | ✅ | JWT httpOnly cookies (access + refresh); rotation backed by `refresh_tokens` table; per-user data isolation (sessions, documents, fail-closed RAG scoping); React login/signup UI with transparent auto-refresh |
 
 ---
 
@@ -154,6 +154,19 @@ Open `http://localhost:5173`, register an account, and submit a research questio
 | `GET` | `/research/{id}/stream` | required | SSE stream of per-agent progress |
 
 **Rate limiting.** The write endpoints are rate-limited (`slowapi`), keyed per authenticated user when logged in and per IP otherwise; a tripped limit returns `429`. Read-only GETs (status poll, SSE stream, list) are intentionally unlimited so the UI's polling isn't throttled. Limits: `POST /research` 10/min, `POST /documents[/upload]` 20/min (per user); `POST /auth/login` 10/min, `POST /auth/register` 5/min (per IP). Toggle with `RATE_LIMIT_ENABLED` (default on). Storage is in-process (single container); Redis is the multi-worker scale path.
+
+---
+
+## Security
+
+Prompt injection can't be fully *prevented* (an LLM reads whatever lands in its context), so the design focuses on **containment** — limiting what a hijacked agent can do:
+
+- **Read-only tools.** Agents only `web_search` and `rag_retrieve` — no code execution, no arbitrary HTTP (the agent supplies a search *query*, never a URL → no SSRF), no destructive DB actions. An injection can at most influence report text, not take an action.
+- **Fail-closed per-user isolation.** RAG retrieval is scoped to the requesting user in SQL; retrieving across users is an explicit offline-only opt-in, so a missing owner id raises rather than leaking another user's corpus.
+- **Untrusted-content fencing.** Web/document snippets are wrapped in untrusted-data markers (with anti-spoofing), and both the Researcher and Writer prompts are told to treat fenced content as data, never instructions.
+- **Grounded output.** The citation validator drops any claim whose citation doesn't resolve to real evidence, bounding injected misinformation.
+- **Safe rendering.** The report is rendered with `react-markdown` (no raw-HTML plugin, sanitized link schemes, no `dangerouslySetInnerHTML`); a frontend test locks this so XSS can't be silently reintroduced.
+- **Auth, rate limiting, and input size caps** as described above.
 
 ---
 

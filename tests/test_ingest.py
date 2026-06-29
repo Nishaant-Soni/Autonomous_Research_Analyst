@@ -12,7 +12,7 @@ requires_db_and_model = pytest.mark.skipif(
 
 
 @requires_db_and_model
-def test_ingest_document_creates_doc_and_chunks():
+def test_ingest_document_creates_doc_and_chunks(override_auth):
     from fastapi.testclient import TestClient
 
     from app.db.models import Chunk, Document

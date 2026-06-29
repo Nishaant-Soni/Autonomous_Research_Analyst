@@ -45,6 +45,7 @@ def build_initial_state(
     question: str,
     max_iterations: int | None = None,
     user_id: int | None = None,
+    allow_all_users: bool = False,
 ) -> dict:
     """Initial `ResearchState` for a new run. Public so the eval harness can build the same
     state without going through `run_research` (which writes a DB session row).
@@ -53,7 +54,9 @@ def build_initial_state(
     the critic loop-back (the critic node still runs but the conditional edge never
     routes back to the researcher). Used by the C2 critic-loop A/B (plan 4.7).
 
-    `user_id` scopes RAG retrieval to that user's documents; None means no filter (eval/anon)."""
+    `user_id` scopes RAG retrieval to that user's documents. `allow_all_users` must be set
+    True for the eval/offline path (where `user_id` is None) so `rag_retrieve` will run; the
+    per-user API path leaves both at their per-user defaults (fail-closed — see rag.py)."""
     return {
         "session_id": session_id,
         "question": question,
@@ -70,6 +73,7 @@ def build_initial_state(
         "low_confidence": False,
         "stripped_fraction": 0.0,
         "user_id": user_id,
+        "allow_all_users": allow_all_users,
     }
 
 

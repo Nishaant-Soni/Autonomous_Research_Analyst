@@ -42,6 +42,10 @@ def test_writer_prompt_presents_indexed_evidence():
     assert "[ev:0] (web) On-device inference cuts latency." in user_msg
     assert "[ev:1] (rag) Quantization shrinks models." in user_msg
     assert "some notes" in user_msg  # advisory draft hint is included
+    # Evidence is fenced as untrusted, and the system prompt carries the injection guard.
+    assert "<<<UNTRUSTED_DATA>>>" in user_msg
+    sys_msg = next(m for m in provider.messages if m["role"] == "system")["content"]
+    assert "UNTRUSTED DATA" in sys_msg
 
 
 def test_writer_node_sets_report_md(monkeypatch):

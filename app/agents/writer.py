@@ -11,6 +11,7 @@ block in all paths. This keeps a single numbering authority and lets 2.6 renumbe
 dropping any unsupported claims.
 """
 
+from app.agents.untrusted import GUARD, wrap_untrusted
 from app.graph.state import ResearchState
 from app.llm.provider import LLMProvider, get_default_provider
 from app.models.evidence import Evidence
@@ -29,15 +30,19 @@ _SYSTEM_PROMPT = (
     "are not in it, and cite nothing that is not in the list.\n"
     "Do NOT write a sources, references, or citations list, and do NOT renumber — citation "
     "numbering and the sources section are added automatically downstream. End after the "
-    "Conclusion."
+    f"Conclusion.\n{GUARD}"
 )
 
 
 def _format_evidence(evidence: list[Evidence]) -> str:
+    # Evidence content is untrusted (gathered from web/corpus). Fence each item so injected
+    # instructions inside a snippet are treated as data (see app/agents/untrusted.py). The
+    # `[ev:i] (retriever)` label stays inside the fence so the Writer can still cite it.
     if not evidence:
         return "(no evidence gathered)"
     return "\n".join(
-        f"[ev:{i}] ({e.retriever}) {e.content}" for i, e in enumerate(evidence)
+        wrap_untrusted(f"[ev:{i}] ({e.retriever}) {e.content}")
+        for i, e in enumerate(evidence)
     )
 
 

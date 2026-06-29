@@ -33,7 +33,11 @@ async def run_one_question(
     `max_iterations` overrides `settings.max_iterations` for this run only — set to `0`
     to disable the critic loop-back for the C2 A/B."""
     graph = build_graph()  # no checkpointer: eval is one-shot, no resume needed
-    initial = build_initial_state(item.id, item.question, max_iterations=max_iterations)
+    # Eval corpus is ingested with user_id=NULL, so retrieval must explicitly opt into the
+    # cross-user (unscoped) path — the fail-closed default in rag_retrieve would otherwise raise.
+    initial = build_initial_state(
+        item.id, item.question, max_iterations=max_iterations, allow_all_users=True
+    )
     config: dict = {}
     if run_id is not None:
         config = {

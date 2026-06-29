@@ -22,6 +22,15 @@ def test_empty_question_is_rejected(override_auth):
     assert resp.status_code == 422
 
 
+def test_overlong_question_is_rejected(override_auth):
+    # Length cap enforced at the validation layer (before any LLM work), bounding token cost.
+    from app.api.research import _MAX_QUESTION_CHARS
+
+    client = TestClient(app)
+    resp = client.post("/research", json={"question": "x" * (_MAX_QUESTION_CHARS + 1)})
+    assert resp.status_code == 422
+
+
 def test_list_research_clamps_limit_at_validation_layer(override_auth):
     """Validation: limit > max returns 422 (Pydantic Query constraint) — no DB needed.
     Belongs alongside the empty-question test as a pure schema check."""

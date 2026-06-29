@@ -23,6 +23,12 @@ from eval.dataset import GoldenItem
 _CORPUS_DIR = Path(__file__).parent / "corpus"
 
 
+def _default_retriever(query: str, k: int) -> list:
+    # Eval corpus is ingested with user_id=NULL → opt into the unscoped path explicitly,
+    # since rag_retrieve is fail-closed and would otherwise raise on user_id=None.
+    return rag_retrieve(query, k, allow_all_users=True)
+
+
 def _ws(text: str) -> str:
     """Collapse whitespace; mirrors `eval.dataset._normalize_ws` (substring matching across
     line wraps)."""
@@ -33,7 +39,7 @@ def check_corpus_retrievability(
     items: list[GoldenItem],
     k: int = 5,
     corpus_dir: Path = _CORPUS_DIR,
-    retriever: Callable[[str, int], list] = rag_retrieve,
+    retriever: Callable[[str, int], list] = _default_retriever,
 ) -> dict:
     """Run the check across every corpus-targeted item. Returns:
 

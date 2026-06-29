@@ -2,6 +2,8 @@ import os
 
 import pytest
 
+from app.retrieval.rag import rag_retrieve
+
 # Needs both Postgres AND the real embedding model — kept out of CI (HF 429 on shared
 # runner IPs). Covered locally with the cached model.
 requires_db_and_model = pytest.mark.skipif(
@@ -10,13 +12,21 @@ requires_db_and_model = pytest.mark.skipif(
 )
 
 
+def test_rag_retrieve_is_fail_closed_without_a_user():
+    # Fast (no DB/model): the guard fires before any embedding/DB work. A bare call with no
+    # user_id must raise rather than silently retrieving across every user's corpus.
+    with pytest.raises(ValueError, match="requires user_id"):
+        rag_retrieve("anything")
+
+
 @requires_db_and_model
-def test_rag_retrieve_ranks_relevant_chunk_first():
+def test_rag_retrieve_ranks_relevant_chunk_first(override_auth):
     from fastapi.testclient import TestClient
 
     from app.main import app
-    from app.retrieval.rag import rag_retrieve
 
+    # override_auth makes /documents attach user_id = override_auth.id, so retrieval can be
+    # scoped to that user (the production per-user path).
     client = TestClient(app)
     client.post(
         "/documents",
@@ -33,7 +43,9 @@ def test_rag_retrieve_ranks_relevant_chunk_first():
         },
     )
 
-    results = rag_retrieve("What is the capital of France?", k=3)
+    results = rag_retrieve(
+        "What is the capital of France?", k=3, user_id=override_auth.id
+    )
 
     assert results
     top = results[0]

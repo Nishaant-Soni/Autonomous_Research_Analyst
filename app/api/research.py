@@ -25,8 +25,13 @@ router = APIRouter()
 _background_tasks: set[asyncio.Task] = set()
 
 
+# A research question is a sentence or two; cap it to bound token cost and reject
+# oversized-payload abuse before any LLM work begins (mirrors the documents size guard).
+_MAX_QUESTION_CHARS = 2000
+
+
 class ResearchIn(BaseModel):
-    question: str = Field(min_length=1)
+    question: str = Field(min_length=1, max_length=_MAX_QUESTION_CHARS)
 
 
 class ResearchOut(BaseModel):

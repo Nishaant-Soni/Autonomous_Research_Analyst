@@ -86,3 +86,7 @@ class ResearchState(TypedDict):
     user_id: (
         int | None
     )  # owning user; None for eval/anonymous runs (no RAG filter applied)
+    # Explicit opt-in to cross-user RAG (eval/offline only). Fail-closed: with user_id=None
+    # this must be True for rag_retrieve to run at all (see app/retrieval/rag.py). The
+    # per-user API path leaves it False so a missing user_id can't silently read all corpora.
+    allow_all_users: bool

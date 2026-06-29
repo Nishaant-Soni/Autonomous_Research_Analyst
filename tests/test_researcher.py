@@ -46,7 +46,7 @@ def recorded_retrievers(monkeypatch):
             )
         ]
 
-    def fake_rag(query, k=5, user_id=None):
+    def fake_rag(query, k=5, user_id=None, allow_all_users=False):
         queries.append(("rag", query))
         return [Evidence(content=f"rag:{query}", retriever="rag", source_chunk_id=1)]
 
