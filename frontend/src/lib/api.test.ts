@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fetchHealth, postResearch, ApiError } from "./api";
+import { fetchHealth, postResearch, ApiError, errorMessageFromBody } from "./api";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -51,5 +51,46 @@ describe("api", () => {
     const err = await fetchHealth().catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(404);
+  });
+});
+
+describe("errorMessageFromBody", () => {
+  it("returns a string detail as-is (HTTPException shape)", () => {
+    expect(errorMessageFromBody({ detail: "Invalid credentials" }, "fallback")).toBe(
+      "Invalid credentials",
+    );
+  });
+
+  it("flattens a 422 validation array to 'field: msg' (the password-too-short case)", () => {
+    const body = {
+      detail: [
+        {
+          type: "string_too_short",
+          loc: ["body", "password"],
+          msg: "String should have at least 8 characters",
+        },
+      ],
+    };
+    expect(errorMessageFromBody(body, "fallback")).toBe(
+      "password: String should have at least 8 characters",
+    );
+  });
+
+  it("joins multiple validation errors", () => {
+    const body = {
+      detail: [
+        { loc: ["body", "email"], msg: "value is not a valid email address" },
+        { loc: ["body", "password"], msg: "String should have at least 8 characters" },
+      ],
+    };
+    expect(errorMessageFromBody(body, "fallback")).toBe(
+      "email: value is not a valid email address; password: String should have at least 8 characters",
+    );
+  });
+
+  it("falls back when detail is absent, empty, or null", () => {
+    expect(errorMessageFromBody({}, "fallback")).toBe("fallback");
+    expect(errorMessageFromBody(null, "fallback")).toBe("fallback");
+    expect(errorMessageFromBody({ detail: [] }, "fallback")).toBe("fallback");
   });
 });

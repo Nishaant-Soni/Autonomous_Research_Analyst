@@ -17,6 +17,25 @@ class ApiError extends Error {
   }
 }
 
+// FastAPI returns `detail` as a plain string for raised HTTPExceptions (e.g. "Invalid
+// credentials"), but as an array of {loc, msg} objects for 422 request-validation errors.
+// Flatten both shapes into one readable string so the UI never renders "[object Object]".
+export function errorMessageFromBody(body: unknown, fallback: string): string {
+  const detail = (body as { detail?: unknown } | null)?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((d) => {
+        const { loc, msg } = d as { loc?: unknown[]; msg?: string };
+        const field = Array.isArray(loc) ? loc.filter((p) => p !== "body").join(".") : "";
+        return field && msg ? `${field}: ${msg}` : (msg ?? "");
+      })
+      .filter(Boolean);
+    if (msgs.length > 0) return msgs.join("; ");
+  }
+  return fallback;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // Only attach Content-Type when there's actually a body — otherwise we'd turn
   // bodyless GETs (like /health) into preflighted CORS requests for no reason and

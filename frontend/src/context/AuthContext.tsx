@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { errorMessageFromBody } from "../lib/api";
 import { authFetch, setAuthFailureCallback } from "../lib/authFetch";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
@@ -45,8 +46,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       body: JSON.stringify({ email, password }),
     });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({})) as { detail?: string };
-      throw new Error(body.detail ?? "Login failed");
+      const body = await res.json().catch(() => ({}));
+      throw new Error(errorMessageFromBody(body, "Login failed"));
     }
     const data = await res.json() as { user_id: number; email: string };
     setUser({ id: data.user_id, email: data.email });

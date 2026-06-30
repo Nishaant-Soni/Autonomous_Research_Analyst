@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { errorMessageFromBody } from "../lib/api";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
@@ -42,8 +43,8 @@ export function LoginPage() {
           body: JSON.stringify({ email, password }),
         });
         if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as { detail?: string };
-          throw new Error(body.detail ?? "Registration failed");
+          const body = await res.json().catch(() => ({}));
+          throw new Error(errorMessageFromBody(body, "Registration failed"));
         }
         await login(email, password);
       } else {
