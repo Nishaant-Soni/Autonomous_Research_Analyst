@@ -215,7 +215,7 @@ A small **golden dataset** of ~15–20 research questions, each with a known set
 - **Context recall** — did retrieval surface the facts needed (Ragas).
 - **Citation accuracy** — % of citation markers that resolve to a real source (deterministic, from the validator).
 - **Hallucination rate** — claims with no supporting evidence (inverse of faithfulness, surfaced explicitly because it's the headline number).
-- **Latency and cost per run** — pulled from LangSmith.
+- **Latency and cost per run** — latency from wall-clock timing of each run; cost from LangSmith token usage.
 
 Results are written to a versioned report so iterations are comparable. A 3-arm experiment (original gate / gate OFF / tightened gate) was run over the 16-item golden set. Key outcome: the tightened gate (`groundedness < 0.70 AND gaps ≥ 2`) cut hallucination rate from **5.5% → 4.1%** (~25% relative reduction) vs. the original over-eager gate, at near-OFF cost. The original gate fired on every item and produced a 7-help / 7-hurt / 2-tied wash; the tightened gate fires on only 3 of 16 items — exactly where a second research pass is worth paying for. Full results: `eval/results/critic_three_way.md`.
 
