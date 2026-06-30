@@ -19,7 +19,7 @@ Evaluated against a [16-item golden dataset](eval/golden.jsonl) covering RAG, LL
 | **Hallucination rate** (1 − faithfulness) | **4.1%** |
 | Latency / item | 46.5 s |
 
-### Critic-loop A/B
+### Critic-loop 3-arm evaluation
 
 The critic loop was tuned across three arms. The key finding: the original `needs_more_research` gate was over-eager — it fired on every item and produced a net-wash 7-help / 7-hurt picture at 2× cost. Tightening to **two independent signals** (low groundedness *and* multiple named gaps) cut hallucination by ~25% at near-OFF cost:
 
