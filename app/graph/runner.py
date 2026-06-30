@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # Surfaced to the client (status row + SSE) on failure. The real exception (with traceback)
 # goes to the logs via `logger.exception`; raw exception text is not exposed to the client,
 # since it can carry internal detail (DB errors, library internals, stack context).
-_GENERIC_RUN_ERROR = "The research run failed. See server logs for details."
+_GENERIC_RUN_ERROR = "The research run failed. Please try again."
 
 # Strong refs so background scoring tasks aren't GC'd mid-run.
 _scoring_tasks: set = set()

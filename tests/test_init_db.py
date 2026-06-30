@@ -38,7 +38,9 @@ def test_marks_non_terminal_sessions_as_failed():
     with SessionLocal() as db:
         sessions = db.query(ResearchSession).all()
         assert all(s.status == "failed" for s in sessions)
-        assert all(s.error == "abandoned at startup" for s in sessions)
+        assert all(
+            s.error == "The run was interrupted by a server restart." for s in sessions
+        )
         assert all(s.completed_at is not None for s in sessions)
 
 
@@ -67,7 +69,7 @@ def test_does_not_touch_done_or_already_failed_sessions():
         failed = db.query(ResearchSession).filter_by(question="real failure").one()
         assert done.status == "done"
         # Real failure's error message must be preserved — not overwritten with the
-        # generic "abandoned at startup" string.
+        # generic abandoned-session string.
         assert failed.error == "real error from runner"
 
 

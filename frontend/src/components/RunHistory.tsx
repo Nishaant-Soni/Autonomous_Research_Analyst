@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  ApiError,
   getResearch,
   listResearch,
   type ResearchDetail,
@@ -75,13 +74,7 @@ export function RunHistory({
       } catch (err) {
         if (!active) return;
         setPhase("error");
-        setError(
-          err instanceof ApiError
-            ? `API ${err.status}: ${err.message}`
-            : err instanceof Error
-              ? err.message
-              : "Unknown error",
-        );
+        setError(err instanceof Error ? err.message : "Unknown error");
       }
     }
 

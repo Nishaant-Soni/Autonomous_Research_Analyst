@@ -58,7 +58,7 @@ async def init_db(checkpointer) -> None:
 # stopped (deploy, OOM, crash, dev rebuild). The startup sweep below promotes them to
 # `failed` so the UI / API consumers see an honest terminal state instead of a zombie.
 _TERMINAL_STATUSES = ("done", "failed")
-_ABANDONED_ERROR = "abandoned at startup"
+_ABANDONED_ERROR = "The run was interrupted by a server restart."
 
 
 def purge_expired_refresh_tokens() -> int:

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ApiError, postDocumentFile } from "../lib/api";
+import { postDocumentFile } from "../lib/api";
 
 const ACCEPTED = ".txt,.md,.pdf";
 
@@ -34,13 +34,7 @@ export function DocumentUploadForm() {
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
     } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? `API ${err.status}: ${err.message}`
-          : err instanceof Error
-            ? err.message
-            : "Unknown error",
-      );
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setSubmitting(false);
     }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ApiError, postResearch } from "../lib/api";
+import { postResearch } from "../lib/api";
 
 interface Props {
   onSubmitted: (sessionId: number) => void;
@@ -23,13 +23,7 @@ export function QuestionForm({ onSubmitted }: Props) {
       onSubmitted(session_id);
       setQuestion("");
     } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? `API ${err.status}: ${err.message}`
-          : err instanceof Error
-            ? err.message
-            : "Unknown error",
-      );
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setSubmitting(false);
     }
