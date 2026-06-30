@@ -6,6 +6,7 @@ Two POST paths share the same `ingest_document` primitive (`app/ingest/store.py`
   follow-up). Accepts `.txt`, `.md`, `.pdf`; rejects others with 400.
 """
 
+import asyncio
 import io
 from pathlib import PurePosixPath
 
@@ -16,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.api.ratelimit import DOCUMENTS_LIMIT, limiter
 from app.auth.dependencies import get_current_user
 from app.db.models import User
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.ingest.store import ingest_document
 
 router = APIRouter()
@@ -80,7 +81,6 @@ def _extract_text(filename: str, data: bytes) -> str:
 async def ingest_document_upload(
     request: Request,
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DocumentOut:
     filename = file.filename or "upload"
@@ -98,19 +98,30 @@ async def ingest_document_upload(
             detail=f"file too large; max {_MAX_UPLOAD_BYTES // 1024 // 1024} MB",
         )
 
-    text = _extract_text(filename, data)
-    if not text.strip():
-        raise HTTPException(
-            status_code=400, detail="no extractable text in uploaded file"
-        )
+    user_id = (
+        current_user.id
+    )  # read the scalar now; the worker thread won't touch the ORM
 
-    document_id, chunks = ingest_document(
-        db,
-        raw_text=text,
-        title=filename,
-        source_uri=f"upload:{filename}",
-        doc_metadata={"upload": True, "ext": ext, "size_bytes": len(data)},
-        user_id=current_user.id,
-    )
-    db.commit()
+    def _extract_and_store() -> tuple[int, int]:
+        # PDF extraction (pypdf) and embedding are CPU-bound and would block the event loop
+        # on this async endpoint — run them in a worker thread with their own DB session
+        # (a request-scoped Session must not be shared across threads).
+        text = _extract_text(filename, data)
+        if not text.strip():
+            raise HTTPException(
+                status_code=400, detail="no extractable text in uploaded file"
+            )
+        with SessionLocal() as db:
+            document_id, chunks = ingest_document(
+                db,
+                raw_text=text,
+                title=filename,
+                source_uri=f"upload:{filename}",
+                doc_metadata={"upload": True, "ext": ext, "size_bytes": len(data)},
+                user_id=user_id,
+            )
+            db.commit()
+        return document_id, chunks
+
+    document_id, chunks = await asyncio.to_thread(_extract_and_store)
     return DocumentOut(document_id=document_id, chunks=chunks)

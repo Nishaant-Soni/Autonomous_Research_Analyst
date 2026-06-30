@@ -2,7 +2,7 @@
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -26,9 +26,33 @@ _DUMMY_HASH = hash_password("dummy-constant-time-guard")
 router = APIRouter(prefix="/auth")
 
 
-class AuthIn(BaseModel):
-    email: str
+# bcrypt silently truncates anything past 72 bytes, so two passwords sharing a 72-byte
+# prefix would hash identically. Reject over-long passwords at the edge rather than truncate.
+_MAX_PASSWORD_BYTES = 72
+_MIN_PASSWORD_LEN = 8
+
+
+class LoginIn(BaseModel):
+    """Login accepts any stored credential — no min-length policy here (that belongs on
+    registration), so a short legacy password still returns 401, not 422, preserving the
+    constant-time enumeration guard. `EmailStr` validates format; the byte cap keeps bcrypt
+    from silently truncating an over-long attempt."""
+
+    email: EmailStr
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def _within_bcrypt_byte_limit(cls, v: str) -> str:
+        if len(v.encode("utf-8")) > _MAX_PASSWORD_BYTES:
+            raise ValueError(f"password must be at most {_MAX_PASSWORD_BYTES} bytes")
+        return v
+
+
+class RegisterIn(LoginIn):
+    """Registration adds the minimum-strength policy on top of LoginIn's checks."""
+
+    password: str = Field(min_length=_MIN_PASSWORD_LEN)
 
 
 class UserOut(BaseModel):
@@ -66,7 +90,9 @@ def _clear_auth_cookies(response: Response) -> None:
 
 @router.post("/register", status_code=201, response_model=UserOut)
 @limiter.limit(AUTH_REGISTER_LIMIT)
-def register(request: Request, body: AuthIn, db: Session = Depends(get_db)) -> UserOut:
+def register(
+    request: Request, body: RegisterIn, db: Session = Depends(get_db)
+) -> UserOut:
     user = User(email=body.email, hashed_pw=hash_password(body.password))
     db.add(user)
     try:
@@ -81,7 +107,7 @@ def register(request: Request, body: AuthIn, db: Session = Depends(get_db)) -> U
 @router.post("/login", response_model=UserOut)
 @limiter.limit(AUTH_LOGIN_LIMIT)
 def login(
-    request: Request, body: AuthIn, response: Response, db: Session = Depends(get_db)
+    request: Request, body: LoginIn, response: Response, db: Session = Depends(get_db)
 ) -> UserOut:
     user = db.query(User).filter_by(email=body.email).first()
     # Always run verify_password (even when user is None) so response time is constant

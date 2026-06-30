@@ -23,6 +23,11 @@ from app.graph.build import build_graph
 
 logger = logging.getLogger(__name__)
 
+# Surfaced to the client (status row + SSE) on failure. The real exception (with traceback)
+# goes to the logs via `logger.exception`; raw exception text is not exposed to the client,
+# since it can carry internal detail (DB errors, library internals, stack context).
+_GENERIC_RUN_ERROR = "The research run failed. See server logs for details."
+
 # Strong refs so background scoring tasks aren't GC'd mid-run.
 _scoring_tasks: set = set()
 
@@ -201,10 +206,12 @@ async def run_research(
         # _schedule_scoring(session_id, question, final["evidence"], final["report_md"])
         _emit(queue, {"status": "done"})
         return final
-    except Exception as exc:
+    except Exception:
+        # Full traceback (incl. the real exception) goes to the logs; the client only ever
+        # sees the generic message, so internal detail isn't leaked through status/SSE.
         logger.exception("research run %s failed", session_id)
-        _update_session(session_id, status="failed", error=str(exc))
-        _emit(queue, {"status": "failed", "error": str(exc)})
+        _update_session(session_id, status="failed", error=_GENERIC_RUN_ERROR)
+        _emit(queue, {"status": "failed", "error": _GENERIC_RUN_ERROR})
         return None
     finally:
         _emit(

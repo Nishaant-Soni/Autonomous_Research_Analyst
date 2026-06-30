@@ -34,7 +34,9 @@ def client():
 
 
 def test_register(client):
-    r = client.post("/auth/register", json={"email": "a@test.com", "password": "pw1"})
+    r = client.post(
+        "/auth/register", json={"email": "a@test.com", "password": "password1"}
+    )
     assert r.status_code == 201
     data = r.json()
     assert data["email"] == "a@test.com"
@@ -42,22 +44,32 @@ def test_register(client):
 
 
 def test_register_duplicate_email(client):
-    client.post("/auth/register", json={"email": "dup@test.com", "password": "pw"})
-    r = client.post("/auth/register", json={"email": "dup@test.com", "password": "pw2"})
+    client.post(
+        "/auth/register", json={"email": "dup@test.com", "password": "password1"}
+    )
+    r = client.post(
+        "/auth/register", json={"email": "dup@test.com", "password": "password2"}
+    )
     assert r.status_code == 409
 
 
 def test_login_success_sets_cookies(client):
-    client.post("/auth/register", json={"email": "b@test.com", "password": "pw2"})
-    r = client.post("/auth/login", json={"email": "b@test.com", "password": "pw2"})
+    client.post("/auth/register", json={"email": "b@test.com", "password": "password2"})
+    r = client.post(
+        "/auth/login", json={"email": "b@test.com", "password": "password2"}
+    )
     assert r.status_code == 200
     assert "access_token" in r.cookies
     assert "refresh_token" in r.cookies
 
 
 def test_login_wrong_password(client):
-    client.post("/auth/register", json={"email": "c@test.com", "password": "right"})
-    r = client.post("/auth/login", json={"email": "c@test.com", "password": "wrong"})
+    client.post(
+        "/auth/register", json={"email": "c@test.com", "password": "rightpass8"}
+    )
+    r = client.post(
+        "/auth/login", json={"email": "c@test.com", "password": "wrongpass8"}
+    )
     assert r.status_code == 401
     assert r.json()["detail"] == "Invalid credentials"
 
@@ -72,8 +84,8 @@ def test_refresh_rotates_tokens(client):
     from app.db.models import RefreshToken
     from app.db.session import SessionLocal
 
-    client.post("/auth/register", json={"email": "d@test.com", "password": "pw"})
-    client.post("/auth/login", json={"email": "d@test.com", "password": "pw"})
+    client.post("/auth/register", json={"email": "d@test.com", "password": "password1"})
+    client.post("/auth/login", json={"email": "d@test.com", "password": "password1"})
 
     old_refresh = client.cookies.get("refresh_token")
     r = client.post("/auth/refresh")
@@ -90,8 +102,10 @@ def test_refresh_rotates_tokens(client):
 
 
 def test_refresh_used_token_returns_401(client):
-    client.post("/auth/register", json={"email": "e@test.com", "password": "pw"})
-    login_r = client.post("/auth/login", json={"email": "e@test.com", "password": "pw"})
+    client.post("/auth/register", json={"email": "e@test.com", "password": "password1"})
+    login_r = client.post(
+        "/auth/login", json={"email": "e@test.com", "password": "password1"}
+    )
     assert login_r.status_code == 200
     # Capture the original refresh token before it gets rotated.
     original_refresh = login_r.cookies.get("refresh_token")
@@ -111,8 +125,8 @@ def test_refresh_used_token_returns_401(client):
 
 
 def test_logout_clears_cookies(client):
-    client.post("/auth/register", json={"email": "f@test.com", "password": "pw"})
-    client.post("/auth/login", json={"email": "f@test.com", "password": "pw"})
+    client.post("/auth/register", json={"email": "f@test.com", "password": "password1"})
+    client.post("/auth/login", json={"email": "f@test.com", "password": "password1"})
 
     r = client.post("/auth/logout")
     assert r.status_code == 200
@@ -127,8 +141,8 @@ def test_me_without_cookie_returns_401(client):
 
 
 def test_me_after_login(client):
-    client.post("/auth/register", json={"email": "g@test.com", "password": "pw"})
-    client.post("/auth/login", json={"email": "g@test.com", "password": "pw"})
+    client.post("/auth/register", json={"email": "g@test.com", "password": "password1"})
+    client.post("/auth/login", json={"email": "g@test.com", "password": "password1"})
     r = client.get("/auth/me")
     assert r.status_code == 200
     assert r.json()["email"] == "g@test.com"

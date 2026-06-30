@@ -90,7 +90,7 @@ def test_register_returns_429_past_the_limit(monkeypatch):
             statuses = [
                 client.post(
                     "/auth/register",
-                    json={"email": f"rl{i}@test.com", "password": "pw"},
+                    json={"email": f"rl{i}@test.com", "password": "password1"},
                 ).status_code
                 for i in range(6)
             ]

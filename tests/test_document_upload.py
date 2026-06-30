@@ -72,7 +72,7 @@ requires_db_and_model = pytest.mark.skipif(
 
 
 @requires_db_and_model
-def test_upload_txt_ingests_and_chunks():
+def test_upload_txt_ingests_and_chunks(override_auth):
     from fastapi.testclient import TestClient
 
     from app.main import app

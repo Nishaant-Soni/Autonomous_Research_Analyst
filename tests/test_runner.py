@@ -220,11 +220,16 @@ def test_run_research_records_failure(monkeypatch):
 
     asyncio.run(_body())
 
+    from app.graph.runner import _GENERIC_RUN_ERROR
+
     with SessionLocal() as db:
         session = db.get(ResearchSession, session_id)
         assert session.status == "failed"
-        assert "boom" in (session.error or "")
+        # Generic message surfaced; raw exception text ("boom") is NOT leaked to the client.
+        assert session.error == _GENERIC_RUN_ERROR
+        assert "boom" not in (session.error or "")
 
     items = _drain(queue)
-    assert any(it and it.get("status") == "failed" for it in items)
+    failed = [it for it in items if it and it.get("status") == "failed"]
+    assert failed and failed[0]["error"] == _GENERIC_RUN_ERROR
     assert items[-1] is None
