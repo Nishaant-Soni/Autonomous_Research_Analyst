@@ -52,6 +52,28 @@ describe("api", () => {
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(404);
   });
+
+  it("surfaces a parsed FastAPI detail, not raw JSON", async () => {
+    mockFetch.mockResolvedValue(
+      errorResponse(400, JSON.stringify({ detail: "file too large; max 5 MB" })),
+    );
+    const err = await fetchHealth().catch((e) => e);
+    expect((err as ApiError).message).toBe("file too large; max 5 MB");
+  });
+
+  it("surfaces the slowapi rate-limit (429) error message", async () => {
+    mockFetch.mockResolvedValue(
+      errorResponse(429, JSON.stringify({ error: "Rate limit exceeded: 10 per 1 minute" })),
+    );
+    const err = await fetchHealth().catch((e) => e);
+    expect((err as ApiError).message).toBe("Rate limit exceeded: 10 per 1 minute");
+  });
+
+  it("keeps the raw text for non-JSON error bodies", async () => {
+    mockFetch.mockResolvedValue(errorResponse(502, "Bad Gateway"));
+    const err = await fetchHealth().catch((e) => e);
+    expect((err as ApiError).message).toBe("Bad Gateway");
+  });
 });
 
 describe("errorMessageFromBody", () => {
@@ -86,6 +108,12 @@ describe("errorMessageFromBody", () => {
     expect(errorMessageFromBody(body, "fallback")).toBe(
       "email: value is not a valid email address; password: String should have at least 8 characters",
     );
+  });
+
+  it("returns slowapi's top-level error string (429 shape)", () => {
+    expect(
+      errorMessageFromBody({ error: "Rate limit exceeded: 5 per 1 minute" }, "fallback"),
+    ).toBe("Rate limit exceeded: 5 per 1 minute");
   });
 
   it("falls back when detail is absent, empty, or null", () => {

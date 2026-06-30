@@ -19,9 +19,11 @@ class ApiError extends Error {
 
 // FastAPI returns `detail` as a plain string for raised HTTPExceptions (e.g. "Invalid
 // credentials"), but as an array of {loc, msg} objects for 422 request-validation errors.
-// Flatten both shapes into one readable string so the UI never renders "[object Object]".
+// slowapi rate-limit (429) responses use a top-level `error` string instead. Flatten all
+// shapes into one readable string so the UI never renders "[object Object]" or raw JSON.
 export function errorMessageFromBody(body: unknown, fallback: string): string {
-  const detail = (body as { detail?: unknown } | null)?.detail;
+  const obj = body as { detail?: unknown; error?: unknown } | null;
+  const detail = obj?.detail;
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
     const msgs = detail
@@ -33,7 +35,19 @@ export function errorMessageFromBody(body: unknown, fallback: string): string {
       .filter(Boolean);
     if (msgs.length > 0) return msgs.join("; ");
   }
+  if (typeof obj?.error === "string") return obj.error; // slowapi rate-limit (429) shape
   return fallback;
+}
+
+// Read a non-ok Response into a clean message: parse FastAPI/slowapi JSON when present,
+// else fall back to the raw body text or the status line.
+async function errorMessageFromResponse(res: Response): Promise<string> {
+  const text = await res.text().catch(() => "");
+  try {
+    return errorMessageFromBody(JSON.parse(text), text || res.statusText);
+  } catch {
+    return text || res.statusText;
+  }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -48,8 +62,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   const res = await authFetch(`${API_URL}${path}`, { ...init, headers });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new ApiError(res.status, body || res.statusText);
+    throw new ApiError(res.status, await errorMessageFromResponse(res));
   }
   return res.json() as Promise<T>;
 }
@@ -101,8 +114,7 @@ export async function postDocumentFile(file: File): Promise<DocumentResponse> {
   body.append("file", file);
   const res = await authFetch(`${API_URL}/documents/upload`, { method: "POST", body });
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new ApiError(res.status, text || res.statusText);
+    throw new ApiError(res.status, await errorMessageFromResponse(res));
   }
   return (await res.json()) as DocumentResponse;
 }
